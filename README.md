@@ -16,3 +16,6 @@ The inspiration came from the following ffmpeg command
 ```
 
 Although the final usage will not be quite like that
+
+
+ffmpeg  -hide_banner -f alsa -acodec pcm_s32le -ac:0 2 -ar 192000 -i hw:CARD=USB -filter_complex asplit=2[main][vol],[vol]showvolume=rate=25:f=0.95:o=v:m=p:dm=3:h=80:w=480:ds=log:s=2[vid] -map [main] -f s32le -acodec flac pipe:1 -map [vid] -preset ultrafast -g 25 -an -sc_threshold 0 -c:v:1 libx264 -b:v:1 1000k -maxrate:v:1 1100k -bufsize:v:1 2000k -f hls -hls_time 4 -hls_flags delete_segments+temp_file -strftime 1 -hls_segment_filename volumes/volume-%Y%m%d-%s.ts volumes/volume.m3u8 | ffmpeg -hide_banner -f s32le -i pipe:0 out.flac

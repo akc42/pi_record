@@ -1,0 +1,14 @@
+{
+  "files.autoSave": "onFocusChange",
+  "editor.tabSize": 2,
+  "files.exclude": {
+    "**/*.aux": true,
+    "**/*.fdb_latexmk": true,
+    "**/*.fls": true,
+    "**/*.synctex.gz": true,
+    "**/*.toc": true,
+    "**/docs/*.log": true,
+    "**/docs/*.vscodeLog": true,
+    "*/*.out": true
+  }
+}
