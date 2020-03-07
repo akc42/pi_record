@@ -13,6 +13,9 @@ coverage
 lit
 .DS_Store
 npm-debug.log
+volumes
+volumey
+recordings
 
 .vscode/launch.json
 

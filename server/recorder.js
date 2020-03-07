@@ -26,27 +26,25 @@ const mainargs = '-hide_banner -f alsa -acodec pcm_s32le -ac:0 2 -ar 192000 -i h
 const recargs = '-hide_banner -f s32le -i pipe:0';
 const { spawn } = require('child_process');
 const fs = require('fs').promises;
+const jwt = require('jwt-simple');
   
   class Recorder {
     constructor(device, name, dir) {
       debug('recorder ', name, ' started');
-      this._id = dir.slice(-1);
       this._name = name;
-      this._controlling = '';
-      this._recording = false;
+      this._controlled = '';
       const args = mainargs.replace('hw:dddd', 'hw:' + device).replace(/vvvv/g, dir).split(' ');
       debug('starting ffmeg command is ffmpeg ', args.join(' '));
-      this.ffmpeg = spawn('ffmpeg', args, {
+      this._volume = spawn('ffmpeg', args, {
         cwd: path.resolve(__dirname, '../'),
         stdio: ['inherit', 'pipe', 'pipe']
       });
-      this.ffmpeg.stdout.pipe(devnull());  //throw the output away
-      this.ffmpeg.stderr.on('data', chunk => {
+      this._volume.stdout.pipe(devnull());  //throw the output away
+      this._volume.stderr.on('data', chunk => {
         debugdata('received ffmpeg chunk', chunk.toString());
       });
-      this.running = false;
-      this.runningPromise = Promise.resolve();
-      this.ffmpegClose = new Promise(resolve => this.ffmpeg.once('exit', async () => {
+      this.__recordingPromise = Promise.resolve();
+      this._volumePromise = new Promise(resolve => this._volume.once('exit', async () => {
         debug('ffmpeg exited - delete videos');
         const directory = path.resolve(__dirname,'../', dir)
         const files = await fs.readdir(directory);
@@ -54,80 +52,115 @@ const fs = require('fs').promises;
           await fs.unlink(path.resolve(directory,file));
         } 
 
-        delete this.ffmpeg
+        delete this._ffmpeg
         resolve();
       }));
-      this.name = name;
-    }
-    get id() {
-      return this._id;
+      this._name = name;
     }
     get name() {
       return this._name;
     }
     get controlled() {
       if (this._controlled.length === 0) return false;
-      const payload = jwt.decode(this._controlled,process.env.RECORDER_TOKEN);
-      const now = new Date().getTime();
-      if (now < payload.expiry) return true; //not expired yet, so this is validly controlled.
-      this._controlled = '';
-      return false;
+      try {
+        const payload = jwt.decode(this._controlled,process.env.RECORDER_TOKEN);
+        if (payload.hw !== this._name) return false;
+        return true;
+      } catch(e) {
+        debug('jwt decode threw error ', e);
+        return false;
+      }
     }
     get recording() {
-      return this._recording;
+      return this._recording !== undefined;
     }
     _checkToken(token) {
-
+      if (token !== this._controlled) return false;
+      return this.controlled;
     }
-    control() {
-      if (this._controlled) return false;
+    _makeToken() {
       const payload = {
-        expiry: new Date().getTime() + 300000,   //5 minutes time
+        exp: Date.now() + 300000,   //5 minutes time
         hw: this._name
       };
       this._controlled = jwt.encode(payload,process.env.RECORDER_TOKEN);
+      debug('new token made');
       return this._controlled;
     }
-    play(token) {
-
-
-      if (!this.running ) {
-        const args = recargs.split(' ');
-        const rightnow = new Date();
-        args.push('recordings/' + this.name + rightnow.toISOString());
-        debug('starting recording command is ffmpeg ', args.join(' '));
-        this.recording = spawn('ffmeg', args, {
-          cwd: path.resolve(__dirname, '../'),
-          stdio: ['pipe', 'ignore', 'pipe']
-        });
-        this.recording.stderr.on('data', chunk => {
-          debugdata('received recording chunk ', chunk.toString());
-        });
-        this.ffmpeg.stdout.unpipe();
-        this.ffmpeg.stdout.pipe(this.recording.stdin);
-        this.runningPromise = new Promise(resolve => this.recording.once('exit', () => {
-          debug('running exited');
-          this.running = false;
-          delete this.recording;
-          resolve();
-        }));
-        this.running = true;
-      }
+    take() {
+      debug('take control request received for ', this.name);
+      if (this.controlled) return false;
+      return this._makeToken();
     }
-    stop() {
-      debug('stop request received when running is ', this.running, ' and recording is ', this.recording !== undefined)
-      this.running = false;
-      if (this.recording !== undefined) {
-        this.ffmpeg.stdout.unpipe(); //disconnect the recording part
-        this.ffmpeg.stdout.pipe(devnull()); //now throw ffmpeg output away
-        this.recording.stdin.write(null); //write a null to end the recording
-        this.recording.kill();
+    renew(token) {
+      debug('request to renew token for ', this.name);
+      if (this._checkToken(token)) {
+        return this._makeToken();
       }
+      debug('request to renew failed');
+      return false;
+    }
+    release(token) {
+      debug('request to release token made');
+      if (this._checkToken(token)) {
+        debug('valid request to release token');
+        this._controlled = '';
+        return true;
+      }
+      return false;
+
+    }
+    record(token) {
+      debug('request to start recording')
+      if(this._checkToken(token)) { //only a valid token will allow us to start
+        if (!this.recording ) {
+          const args = recargs.split(' ');
+          const rightnow = new Date();
+          args.push('recordings/' + this.name.replace(/\s/g,'_') + rightnow.toISOString().replace(/\.|:/g,'-') + '.flac');
+          debug('starting recording command is ffmpeg ', args.join(' '));
+          this._recording = spawn('ffmpeg', args, {
+            cwd: path.resolve(__dirname, '../'),
+            stdio: ['pipe', 'ignore', 'pipe']
+          });
+          this._recording.stderr.on('data', chunk => {
+            debugdata('received recording chunk ', chunk.toString());
+          });
+          this._volume.stdout.unpipe();
+          this._volume.stdout.pipe(this._recording.stdin);
+          this.__recordingPromise = new Promise(resolve => this._recording.once('exit', () => {
+            debug('running exited');
+            delete this._recording;
+            resolve();
+            this._recordingPromise = Promise.resolve(); //we need to suceed immediately if we are no longer running
+          }));
+          return true; 
+        }
+      }
+      debug('request to start recording failed');
+      return false;
+    }
+    stop(token) {
+      debug('stop request received when recording is ', this._recording !== undefined)
+      if (this._checkToken(token)) {
+        if (this.recording) {
+          this._volume.stdout.unpipe(); //disconnect the recording part
+          this._volume.stdout.pipe(devnull()); //now throw ffmpeg output away
+          this._recording.stdin.end(); //write a null to end the recording
+          this._recording.kill(); //and then tell it to close
+          return true;
+        }
+      }
+      return false;
     }
     close() {
-      debug('close request received when ffmpeg is ', this.ffmpeg !== undefined, ' and recording is ', this.recording !== undefined);
-      this.stop();
-      if (this.ffmpeg !== undefined) this.ffmpeg.kill();
+      debug('close request received when ffmpeg (volune) is ', this._volume !== undefined, ' and ffmpeg(recording) is ', this._recording !== undefined);
+      if (this.recording) {
+        this._volume.stdout.unpipe(); //disconnect the recording part
+        this._volume.stdout.pipe(devnull()); //now throw ffmpeg output away
+        this._recording.stdin.end(); //wend the recording
+        this._recording.kill(); //and then tell it to close
+      }
+      if (this._volume !== undefined) this._volume.kill();
       return Promise.all([this.ffmpegClose, this.runningPromise]);
     }
   }

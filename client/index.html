@@ -10,29 +10,33 @@
       background-color: lightgrey;
     }
   </style>
-  <script src="/node_modules/hls.js/dists/hls.js"></script>
+  <script src="/node_modules/hls.js/dist/hls.js" module></script>
 </head>
 <body>
 <h1>Simple recorder</h1>
 <p>This is just an unformatted trial page as proof of concept</p>
 
 <section id="buttons">
-  <button id="start" onclick="start('m');">Start Recording</button>
-  <button id="stop" onclick="stop('m')">Stop Recording</button>
+  <button id="take" onclick="take('scarlett');">Take Control</button>
+  <button id="take" onclick="renew('scarlett');">Renew Control</button>
+  <button id="release" onclick="release('scarlett')">Release Control</button>
+
+  <button id="start" onclick="start('scarlett');">Start Recording</button>
+  <button id="stop" onclick="stop('scarlett')">Stop Recording</button>
+
   <button id="sub" onclick="subscribe()">Subscribe</button>
   <button id="unsub" onclick="unsubscribe()">Un Subscribe</button>
 </section>
-
-<section id="container">
+<div id="videocontainer">
   <video id="video" height="480" width="160" autoplay muted></video>
-  <ul id="log">
-
-  </ul>
+</div>
+<button id="clear" onclick="clearlog()">Clear Log</button>
+<ul id="log"></ul>
 <script>
   var video = document.getElementById('video');
   if (Hls.isSupported()) {
     var hls = new Hls();
-    hls.loadSource('/masterm.m3u8');
+    hls.loadSource('/scarlett.m3u8');
     hls.attachMedia(video);
     hls.on(Hls.Events.MANIFEST_PARSED, function() {
       video.play();
@@ -44,7 +48,7 @@
   // Note: it would be more normal to wait on the 'canplay' event below however on Safari (where you are most likely to find built-in HLS support) the video.src URL must be on the user-driven
   // white-list before a 'canplay' event will be emitted; the last video event that can be reliably listened-for when the URL is not on the white-list is 'loadedmetadata'.
   else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-    video.src = '/masters.m3u8';
+    video.src = '/scarlett.m3u8';
     video.addEventListener('loadedmetadata', function() {
       video.play();
     });
@@ -54,11 +58,29 @@
 <script>
   const logger = document.querySelector('#log');
   let src;
+  let token = 'dummy';
   function start(id) {
-    fetch('/api/start/' + id);
+    fetch('/api/recording/' + id + '/start/' + token);
   }
   function stop(id) {
-    fetch('/api/stop/' + id);
+    fetch('/api/recording/' + id + '/stop/' + token);
+  }
+  function renew(id) {
+    fetch('/api/recording/' + id + '/renew/' + token).then(resp => resp.json()).then(json => {
+      if (json.state) token = json.token;
+    });
+  }
+  function take(id) {
+    fetch('/api/recording/' + id + '/take').then(resp => resp.json()).then(json => {
+      if (json.state) token = json.token;
+    })
+  }
+  function release(id) {
+    fetch('/api/recording/' + id + '/release/' + token).then(() => token = 'dummy');
+  }
+
+  function clearlog() {
+    logger.innerHTML = '';
   }
   function subscribe() {
     src = new EventSource('/api/status');
@@ -67,19 +89,21 @@
     src.addEventListener('remove', remEvent);
     src.addEventListener('take', takeEvent);
     src.addEventListener('release', relEvent);
+    src.addEventListener('close', closeEvent);
     src.addEventListener('error', errorEvent);
   }
   function unsubscribe() {
     src.close();
+    log('close', 'Waiting 5 seconds for other events to occur');
     setTimeout(() => {
-      log('close', 'about to remove event listeners, allowing 5 seconds for other events to occur');
+      log('close', 'about to remove event listeners after allowing 5 seconds for other events to occur');
       src.removeEventListener('open',openEvent);
       src.removeEventListener('add', addEvent);
       src.removeEventListener('remove', remEvent);
       src.removeEventListener('take', takeEvent);
       src.removeEventListener('release', relEvent);
       src.removeEventListener('error', errorEvent);
-
+      src.removeEventListener('close',closeEvent);
     }, 5000);
   }
   function log(ev,message) {
@@ -89,7 +113,7 @@
   }
 
   function openEvent(e) {
-    log('open', e.data);
+    log('open', '');
   }
   function addEvent(e) {
     log('add', e.data);
@@ -104,8 +128,14 @@
     log('release', e.data);
   }
   function errorEvent(e) {
-    log('error', e.data);
+    log('error', e.toString());
+    unsubscribe();
   }
+  function closeEvent(e) {
+    log('close', 'Web server Closed');
+    unsubscribe();
+  }
+
   
 </script>
 
