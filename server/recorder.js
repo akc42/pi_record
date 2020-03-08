@@ -44,17 +44,7 @@ const jwt = require('jwt-simple');
         debugdata('received ffmpeg chunk', chunk.toString());
       });
       this.__recordingPromise = Promise.resolve();
-      this._volumePromise = new Promise(resolve => this._volume.once('exit', async () => {
-        debug('ffmpeg exited - delete videos');
-        const directory = path.resolve(__dirname,'../', dir)
-        const files = await fs.readdir(directory);
-        for (let file of files) {
-          await fs.unlink(path.resolve(directory,file));
-        } 
-
-        delete this._ffmpeg
-        resolve();
-      }));
+      this._volumePromise = new Promise(resolve => this._volume.once('exit', resolve));
       this._name = name;
     }
     get name() {
