@@ -27,12 +27,9 @@
     client: chalk.cyan
   };
 
-  function logger(level, message, clientIp) {
+  function logger(level, message) {
     let logLine = '';
     if (process.env.PAS_NOLOG === undefined) {
-      if (clientIp) {
-        logLine += ' ' + clientIp;
-      }
       let ldate = new Date().toLocaleString();
       logLine += ' ' + ldate + ' ' + COLOURS[level](message);
       //eslint-disable-next-line no-console
