@@ -11,6 +11,7 @@
     }
   </style>
   <script src="/node_modules/hls.js/dist/hls.js" module></script>
+
 </head>
 <body>
 <h1>Simple recorder</h1>
@@ -83,12 +84,14 @@
     logger.innerHTML = '';
   }
   function subscribe() {
-    src = new EventSource('/api/status');
+    
+    src = new EventSource('/api/status/' + Date.now()); //not guarenteed to be unique, but good enough
     src.addEventListener('open',openEvent);
     src.addEventListener('add', addEvent);
     src.addEventListener('remove', remEvent);
     src.addEventListener('take', takeEvent);
     src.addEventListener('release', relEvent);
+    src.addEventListener('status',statusEvent);
     src.addEventListener('close', closeEvent);
     src.addEventListener('error', errorEvent);
   }
@@ -97,14 +100,18 @@
     log('close', 'Waiting 5 seconds for other events to occur');
     setTimeout(() => {
       log('close', 'about to remove event listeners after allowing 5 seconds for other events to occur');
-      src.removeEventListener('open',openEvent);
-      src.removeEventListener('add', addEvent);
-      src.removeEventListener('remove', remEvent);
-      src.removeEventListener('take', takeEvent);
-      src.removeEventListener('release', relEvent);
-      src.removeEventListener('error', errorEvent);
-      src.removeEventListener('close',closeEvent);
+      removeListeners();
     }, 5000);
+  }
+  function removeListeners() {
+    src.removeEventListener('open',openEvent);
+    src.removeEventListener('add', addEvent);
+    src.removeEventListener('remove', remEvent);
+    src.removeEventListener('take', takeEvent);
+    src.removeEventListener('release', relEvent);
+    src.removeEventListener('error', errorEvent);
+    src.removeEventListener('close',closeEvent);
+    src.removeEventListener('status', statusEvent);
   }
   function log(ev,message) {
     const li = document.createElement('li');
@@ -128,12 +135,23 @@
     log('release', e.data);
   }
   function errorEvent(e) {
-    log('error', e.toString());
-    unsubscribe();
+    if (e.readyState == EventSource.CLOSED) {
+      log('error', 'Web server Error');
+      removeListeners();
+    } else {
+      log('error', 'Event did not close EventSource');
+    }
   }
   function closeEvent(e) {
-    log('close', 'Web server Closed');
-    unsubscribe();
+    if (e.readyState == EventSource.CLOSED) {
+      log('close', 'Web server Closed');
+    } else {
+      log('close', 'Web Server Did not Close')
+    }
+    removeListeners();
+  }
+  function statusEvent(e) {
+    log('status', e.data);
   }
 
   
