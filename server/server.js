@@ -97,13 +97,15 @@
       server.listen(parseInt(process.env.RECORDER_PORT,10),'0.0.0.0');
       enableDestroy(server);
       
-      router.get('/api/recording/:id/take',checkRecorder, (req,res) => {
+      router.get('/api/recording/:id/take/:channel',checkRecorder, (req,res) => {
         debug('take request received');
-        const token = req.recorder.take();
+        const token = req.recorder.take(req.params.channel);
         res.statusCode = 200;
         if (token) {
+          subscribedChannels[req.params.channel].recorder = req.recorder;
+          subscribedChannels[req.params.channel].token = token;
           res.end(JSON.stringify({state: true, token: token}));
-          sendStatus('take',{ id: req.recorder.name});
+          sendStatus('take',{ id: req.params.id, channel: req.params.channel});
         } else {
           res.end(JSON.stringify({state: false, token: ''}));
         }
@@ -119,10 +121,13 @@
         }
       });
       router.get('/api/recording/:id/release/:token', checkRecorder, (req,res) => {
+        const channel = req.recorder.channel;
         const state = req.recorder.release(req.params.token)
         res.end(JSON.stringify({state: state}));
         if (state) {
-          sendStatus('release', req.recorder.name);
+          subscribedChannels[channel].recorder = null;
+          subscribedChannels[channel].token = '';
+          sendStatus('release', {id:req.params.id});
         }
       });
       router.get('/api/recording/:id/start/:token', checkRecorder, (req,res) => {
@@ -137,7 +142,11 @@
         if (req.headers.accept && req.headers.accept == 'text/event-stream') {
           const channel = req.params.channel;
           debug('/api/status received creating/reusing channel ', channel.toString());
-          subscribedChannels[channel] = res;
+          subscribedChannels[channel] = {
+            res: res,
+            recorder: null,
+            token: ''
+          };
           res.writeHead(200, {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
@@ -146,20 +155,29 @@
           debug('wrote headers');
           req.once('end', () => {
             debug('client closed status channel ', channel.toString());
+
+            if (subscribedChannels[channel].recorder !== null) {
+              if (subscribedChannels[channel].recorder.controlled) {
+                debug('need to release the channel')
+                subscribedChannels[channel].recorder.release(subscribedChannels[channel].token);
+              }
+            }
             delete subscribedChannels[channel];
           });
           const status = {
             scarlett: {
               connected: recorders.scarlett !== undefined,
               taken: recorders.scarlett !== undefined ? recorders.scarlett.controlled : false,
+              channel: recorders.scarlett !== undefined && recorders.scarlett.controlled ? recorders.scarlett.channel : '',
               name: recorders.scarlett !== undefined ? recorders.scarlett.name : ''
             },
             yeti: {
               connected: recorders.yeti !== undefined,
               taken: recorders.yeti !== undefined ? recorders.yeti.controlled : false,
+              channel: recorders.yeti !== undefined && recorders.yeti.controlled ? recorders.yeti.channel : '',
               name: recorders.yeti !== undefined ? recorders.yeti.name : ''
             }
-          }
+          };
           sendStatus('status', status, channel);
 
         } else {
@@ -215,11 +233,13 @@
         scarlett: {
           connected: recorders.scarlett !== undefined,
           taken: recorders.scarlett !== undefined ? recorders.scarlett.controlled : false,
+          channel: recorders.scarlett !== undefined && recorders.scarlett.controlled ? recorders.scarlett.channel : '',
           name: recorders.scarlett !== undefined ? recorders.scarlett.name : ''
         },
         yeti: {
           connected: recorders.yeti !== undefined,
           taken: recorders.yeti !== undefined ? recorders.yeti.controlled : false,
+          channel: recorders.yeti !== undefined && recorders.yeti.controlled ? recorders.yeti.channel : '',
           name: recorders.yeti !== undefined ? recorders.yeti.name : ''
         }
       };
@@ -229,11 +249,13 @@
           scarlett: {
             connected: recorders.scarlett !== undefined,
             taken: recorders.scarlett !== undefined ? recorders.scarlett.controlled : false,
+            channel: recorders.scarlett !== undefined && recorders.scarlett.controlled ? recorders.scarlett.channel : '',
             name: recorders.scarlett !== undefined ? recorders.scarlett.name : ''
           },
           yeti: {
             connected: recorders.yeti !== undefined,
             taken: recorders.yeti !== undefined ? recorders.yeti.controlled : false,
+            channel: recorders.yeti !== undefined && recorders.yeti.controlled ? recorders.yeti.channel : '',
             name: recorders.yeti !== undefined ? recorders.yeti.name : ''
           }
         };
@@ -261,8 +283,12 @@
   }
   function serveFile(req, res, next) {
     //helper for static files
-    let dbug = req.url.indexOf('volume') <  0 ? debugfile : debugmedia;
-    const clientPath = (req.url.indexOf('volume') <  0 && req.url.indexOf('node_modules') < 0 )? '../client/' : '../';
+    let dbug = req.url.substring(0,7).indexOf('volume') <  0 ? debugfile : debugmedia;
+    const clientPath = (
+      req.url.substring(0,7).indexOf('volume') <  0 && 
+      req.url.indexOf('node_modules') < 0 &&
+      req.url.indexOf('lit') < 0 
+      )? '../client/' : '../';
     dbug('clientPath = ', clientPath, ' when req.url = ', req.url);
     let playlist = false;
     //find out where file is
@@ -324,10 +350,10 @@
   function sendStatus(type, data, channel) {
     debug('send status of event type ', type, ' to ', channel ? 'one channel': 'all channels')
     if (channel) {
-      sendMessage(subscribedChannels[channel], type, data);
+      sendMessage(subscribedChannels[channel].res, type, data);
     } else {
       for(let channel in subscribedChannels) {
-        sendMessage(subscribedChannels[channel], type, data);
+        sendMessage(subscribedChannels[channel].res, type, data);
       }
     }
 
@@ -344,6 +370,7 @@
   async function close() {
   // My process has received a SIGINT signal
     if (server) {
+      logger('app', 'Starting Server ShutDown Sequence');
       try {
         if (statusTimer !== 0) clearInterval(statusTimer);
         sendStatus('close',{});
@@ -362,12 +389,11 @@
           await recorders.yeti.close();
           delete recorders.yeti;
         }
-
         debug('About to close Web Server');
         tmp.destroy();
-        logger('app', 'Recorder Server ShowDown');
+        logger('app', 'Recorder Server ShutDown');
       } catch (err) {
-        logger('error', error);
+        logger('error', err);
       }
     }
     process.exit(0);

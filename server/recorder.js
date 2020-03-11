@@ -20,6 +20,7 @@
 const path = require('path');
 const debug = require('debug')('recorder:record');
 const debugdata = require('debug')('recorder:data');
+const debugctl = require('debug')('recorder:control');
 const devnull = require('dev-null');
 //eslint-disable-next-line   max-len
 const mainargs = '-hide_banner -f alsa -acodec pcm_s32le -ac:0 2 -ar 192000 -i hw:dddd -filter_complex asplit=2[main][vol],[vol]showvolume=rate=25:f=0.95:o=v:m=p:dm=3:h=80:w=480:ds=log:s=2[vid] -map [main] -f s32le -acodec flac pipe:1 -map [vid] -preset ultrafast -g 25 -an -sc_threshold 0 -c:v:1 libx264 -b:v:1 1000k -maxrate:v:1 1100k -bufsize:v:1 2000k -f hls -hls_time 4 -hls_flags delete_segments+temp_file -strftime 1 -hls_segment_filename vvvv/volume-%Y%m%d-%s.ts vvvv/volume.m3u8';
@@ -44,7 +45,16 @@ const jwt = require('jwt-simple');
         debugdata('received ffmpeg chunk', chunk.toString());
       });
       this.__recordingPromise = Promise.resolve();
-      this._volumePromise = new Promise(resolve => this._volume.once('exit', resolve));
+      this._volumePromise = new Promise(resolve => this._volume.once('exit', async () => {
+        //delete all the ts files in the directory - leave the .m3u8 file
+        const directory = path.resolve(__dirname,'../', dir)
+        const files = await fs.readdir(directory);
+        for (let 
+          file of files) {
+          if (path.extname(file) === '.ts') await fs.unlink(path.resolve(directory,file));
+        } 
+        resolve();
+      }));
       this._name = name;
     }
     get name() {
@@ -54,12 +64,17 @@ const jwt = require('jwt-simple');
       if (this._controlled.length === 0) return false;
       try {
         const payload = jwt.decode(this._controlled,process.env.RECORDER_TOKEN);
+        debugctl('jwt payload ', payload);
         if (payload.hw !== this._name) return false;
         return true;
       } catch(e) {
+        debugctl('jwt decode threw for channel', this.channel);
         debug('jwt decode threw error ', e);
         return false;
       }
+    }
+    get channel() {
+      return this._channel
     }
     get recording() {
       return this._recording !== undefined;
@@ -68,24 +83,26 @@ const jwt = require('jwt-simple');
       if (token !== this._controlled) return false;
       return this.controlled;
     }
-    _makeToken() {
+    _makeToken(channel) {
       const payload = {
-        exp: Date.now() + 300000,   //5 minutes time
-        hw: this._name
+        exp: Math.round(Date.now()/1000) + 300,   //5 minutes time
+        hw: this._name,
+        channel: channel
       };
       this._controlled = jwt.encode(payload,process.env.RECORDER_TOKEN);
+      this._channel = channel;
       debug('new token made');
       return this._controlled;
     }
-    take() {
-      debug('take control request received for ', this.name);
+    take(channel) {
+      debug('take control request received for ', this.name, ' with channel ', channel);
       if (this.controlled) return false;
-      return this._makeToken();
+      return this._makeToken(channel);
     }
     renew(token) {
       debug('request to renew token for ', this.name);
       if (this._checkToken(token)) {
-        return this._makeToken();
+        return this._makeToken(this.channel);
       }
       debug('request to renew failed');
       return false;
@@ -95,6 +112,7 @@ const jwt = require('jwt-simple');
       if (this._checkToken(token)) {
         debug('valid request to release token');
         this._controlled = '';
+        this._channel = '';
         return true;
       }
       return false;
@@ -121,7 +139,7 @@ const jwt = require('jwt-simple');
             debug('running exited');
             delete this._recording;
             resolve();
-            this._recordingPromise = Promise.resolve(); //we need to suceed immediately if we are no longer running
+            this._recordingPromise = Promise.resolve(); //we need to succeed immediately if we are no longer running
           }));
           return true; 
         }
@@ -151,7 +169,7 @@ const jwt = require('jwt-simple');
         this._recording.kill(); //and then tell it to close
       }
       if (this._volume !== undefined) this._volume.kill();
-      return Promise.all([this.ffmpegClose, this.runningPromise]);
+      return Promise.all([this._volumePromise, this._recordingPromise]);
     }
   }
 
