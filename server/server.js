@@ -188,12 +188,12 @@
       router.use('/', serveFile);
 
       usbDetect.on('add:' + process.env.RECORDER_SCARLETT_VID + ':' + process.env.RECORDER_SCARLETT_PID, device => {
-        recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, device.deviceName, 'volumes');
+        recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, device.deviceName, 'volumes');
         sendStatus('add', {id: 'scarlett', name: recorders.scarlett.name});
         debug('created scarlett recorder');    
       });
       usbDetect.on('add:' + process.env.RECORDER_YETI_VID + ':' + process.env.RECORDER_YETI_PID, device => {
-        recorders.yeti = new Recorder(process.env.RECORDER_YETI_HW, device.deviceName, 'volumey');
+        recorders.yeti = new Recorder(process.env.RECORDER_YETI_HW, process.env.RECORDER_YETI_FORMAT, device.deviceName, 'volumey');
         sendStatus('add', {id: 'yeti', name: recorders.yeti.name});
         debug('created yeti recorder');
       });
@@ -224,10 +224,10 @@
 
       debug('currently connected devices ', devices);
       if (devices[0].length > 0) {
-        recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, devices[0][0].deviceName, 'volumes');
+        recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, devices[0][0].deviceName, 'volumes');
       }
       if (devices[1].length > 0) {
-        recorders.yeti = new Recorder(process.env.RECORDER_YETI_HW, devices[1][0].deviceName, 'volumey');
+        recorders.yeti = new Recorder(process.env.RECORDER_YETI_HW, process.env.RECORDER_YETI_FORMAT, devices[1][0].deviceName, 'volumey');
       }
       const status = {
         scarlett: {

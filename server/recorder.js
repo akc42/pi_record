@@ -30,11 +30,12 @@ const fs = require('fs').promises;
 const jwt = require('jwt-simple');
   
   class Recorder {
-    constructor(device, name, dir) {
+    constructor(device, fmt, name, dir) {
       debug('recorder ', name, ' started');
       this._name = name;
       this._controlled = '';
-      const args = mainargs.replace('hw:dddd', 'hw:' + device).replace(/vvvv/g, dir).split(' ');
+      this._fmt = fmt;
+      const args = mainargs.replace('hw:dddd', 'hw:' + device).replace(/s32le/g,this._fmt).replace(/vvvv/g, dir).split(' ');
       debug('starting ffmeg command is ffmpeg ', args.join(' '));
       this._volume = spawn('ffmpeg', args, {
         cwd: path.resolve(__dirname, '../'),
@@ -122,7 +123,7 @@ const jwt = require('jwt-simple');
       debug('request to start recording')
       if(this._checkToken(token)) { //only a valid token will allow us to start
         if (!this.recording ) {
-          const args = recargs.split(' ');
+          const args = recargs.replace(/s32le/g,this._fmt).split(' ');
           const rightnow = new Date();
           args.push('recordings/' + this.name.replace(/\s/g,'_') + rightnow.toISOString().replace(/\.|:/g,'-') + '.flac');
           debug('starting recording command is ffmpeg ', args.join(' '));
