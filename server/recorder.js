@@ -19,43 +19,49 @@
 */
 const path = require('path');
 const debug = require('debug')('recorder:record');
-const debugdata = require('debug')('recorder:data');
 const debugctl = require('debug')('recorder:control');
-const devnull = require('dev-null');
-//eslint-disable-next-line   max-len
-const mainargs = '-hide_banner -f alsa -acodec pcm_s32le -ac:0 2 -ar 192000 -i hw:dddd -filter_complex asplit=2[main][vol],[vol]showvolume=rate=25:f=0.95:o=v:m=p:dm=3:h=80:w=480:ds=log:s=2[vid] -map [main] -f s32le -acodec flac pipe:1 -map [vid] -preset ultrafast -g 25 -an -sc_threshold 0 -c:v:1 libx264 -b:v:1 1000k -maxrate:v:1 1100k -bufsize:v:1 2000k -f hls -hls_time 4 -hls_flags delete_segments+temp_file -strftime 1 -hls_segment_filename vvvv/volume-%Y%m%d-%s.ts vvvv/volume.m3u8';
-const recargs = '-hide_banner -f s32le -i pipe:0';
-const { spawn } = require('child_process');
-const fs = require('fs').promises;
+const debugvol = require('debug')('recorder:volume');
+const fs = require('fs');
 const jwt = require('jwt-simple');
-  
+const {spawn} = require('child_process');
+const rl = require('readline');
+const logger = require('./logger');
+
+//eslint-disable-next-line   max-len
+const volargs = '-hide_banner -nostats -f alsa -acodec pcm_s32le -ac:0 2 -ar 192000 -i hw:dddd -filter_complex ebur128=peak=true -f null -';
+//eslint-disable-next-line   max-len
+const recargs = '-hide_banner -nostats -f alsa -acodec pcm_s32le -ac:0 2 -ar 192000 -i hw:dddd -filter_complex asplit=2[main][vols],[vols]ebur128=peak=true[vol] -map [main] -acodec flac recordings/out.flac -map [vol] -f null -';
+const sedargs = ['-u', '-n','s/.*FTPK:\\([^d]*\\).*/\\1/p'];
+
   class Recorder {
-    constructor(device, fmt, name, dir) {
-      debug('recorder ', name, ' started');
+    constructor(device, fmt, name) {
+      logger('rec',`recorder ${name} created`);
+      this._volumeMessageCounter = 0;
+      this._device = device;
       this._name = name;
       this._controlled = '';
       this._fmt = fmt;
-      const args = mainargs.replace('hw:dddd', 'hw:' + device).replace(/s32le/g,this._fmt).replace(/vvvv/g, dir).split(' ');
-      debug('starting ffmeg command is ffmpeg ', args.join(' '));
-      this._volume = spawn('ffmpeg', args, {
+      this._isRecording = false;
+      this._subscribers = [];
+      this._sed = spawn('sed', sedargs, {
         cwd: path.resolve(__dirname, '../'),
-        stdio: ['inherit', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'ignore']        
       });
-      this._volume.stdout.pipe(devnull());  //throw the output away
-      this._volume.stderr.on('data', chunk => {
-        debugdata('received ffmpeg chunk', chunk.toString());
+      this._sed.stdin.setDefaultEncoding('utf8');
+      this._sedreader = rl.createInterface({
+        input: this._sed.stdout,
+        terminal: false
       });
-      this.__recordingPromise = Promise.resolve();
-      this._volumePromise = new Promise(resolve => this._volume.once('exit', async () => {
-        //delete all the ts files in the directory - leave the .m3u8 file
-        const directory = path.resolve(__dirname,'../', dir)
-        const files = await fs.readdir(directory);
-        for (let 
-          file of files) {
-          if (path.extname(file) === '.ts') await fs.unlink(path.resolve(directory,file));
-        } 
-        resolve();
-      }));
+      this._sedreader.on('line', line => {
+        if (this._volumeMessageCounter % 100 === 0) debugvol('sending subscribers 100th message ', line);
+        this._volumeMessageCounter++;
+        for (let response of this._subscribers) {
+          response.write(`data:${line}\n\n`);
+        }
+      });
+      this._sedPromise = new Promise(resolve => this._sedreader.on('close', resolve));
+      this._startVolume();            
+      this._recordingPromise = Promise.resolve();
       this._name = name;
     }
     get name() {
@@ -69,43 +75,88 @@ const jwt = require('jwt-simple');
         if (payload.hw !== this._name) return false;
         return true;
       } catch(e) {
-        debugctl('jwt decode threw for channel', this.channel);
+        debugctl('jwt decode threw for client', this.client);
         debug('jwt decode threw error ', e);
         return false;
       }
     }
-    get channel() {
-      return this._channel
+    get client () {
+      return this._client
     }
-    get recording() {
+    get isRecording() {
       return this._recording !== undefined;
     }
     _checkToken(token) {
       if (token !== this._controlled) return false;
       return this.controlled;
     }
-    _makeToken(channel) {
+    _makeToken(client) {
       const payload = {
         exp: Math.round(Date.now()/1000) + 300,   //5 minutes time
         hw: this._name,
-        channel: channel
+        client: client
       };
       this._controlled = jwt.encode(payload,process.env.RECORDER_TOKEN);
-      this._channel = channel;
+      this._client = client;
       debug('new token made');
       return this._controlled;
     }
-    take(channel) {
-      debug('take control request received for ', this.name, ' with channel ', channel);
-      if (this.controlled) return false;
-      return this._makeToken(channel);
+    _startVolume() {
+      const args = volargs.replace('hw:dddd', 'hw:' + this._device).replace(/s32le/g,this._fmt).split(' ');
+      debug('starting volume command is ffmpeg ', args.join(' '));
+      this._volume = spawn('ffmpeg', args, {
+        cwd: path.resolve(__dirname, '../'),
+        stdio: ['pipe', 'ignore', 'pipe']
+      });
+      this._volume.stderr.pipe(this._sed.stdin, {end: false});  //send the output throught the sed filter and out to listener 
+
+      this._volumePromise = new Promise(resolve => this._volume.once('exit', (code, signal) => {
+        debug('volume for ', this.name, ' exited with code ', code, ' and signal ', signal);
+        delete this._volume;
+        if (code !== 0 && code !== 255) logger('error', `recorder ${this.name} volume stream ended prematurely with code ${code}`);
+        resolve(); 
+      }));      
     }
-    renew(token) {
-      debug('request to renew token for ', this.name);
-      if (this._checkToken(token)) {
-        return this._makeToken(this.channel);
+    async close() {
+      debug('close request received when ffmpeg (volume) is ', this._volume !== undefined, ' and ffmpeg(recording) is ', this._recording !== undefined);
+      if (this.isRecording) {
+        this._recording.stderr.unpipe(); //disconnect from the volume filter
+        this._recording.stdin.end('q'); //write this to end the recording
+      } else if (this._volume !== undefined) { //check it hasn't finished prematurely 
+        this._volume.stderr.unpipe();
+        this._volume.stdin.end('q');
       }
-      debug('request to renew failed');
+      this._sed.kill();
+      await Promise.all([this._volumePromise, this._recordingPromise, this._sedPromise]);
+      logger('rec', `recorder ${this.name} closed`)
+    }
+    async record(token) {
+      debug('request to start recording')
+      if(this._checkToken(token)) { //only a valid token will allow us to start
+        if (!this.isRecording ) {
+          this._volume.stderr.unpipe();
+          this._volume.stdin.end('q');
+          await this._volumePromise;
+          const rightnow = new Date();
+          const filename = this.name.replace(/\s/g,'_') + rightnow.toISOString().replace(/\.|:/g,'-') + '.flac';
+          const args = recargs.replace('hw:dddd', 'hw:' + this._device).replace(/s32le/g,this._fmt).replace('out.flac',filename).split(' ');
+          debug('starting recording command is ffmpeg ', args.join(' '));
+          this._recording = spawn('ffmpeg', args, {
+            cwd: path.resolve(__dirname, '../'),
+            stdio: ['pipe', 'ignore', 'pipe']
+          });
+          this._recording.stderr.pipe(this._sed.stdin, {end: false});
+          this._recordingPromise = new Promise(resolve => this._recording.once('exit', (code,signal) => {
+            debug('recording for ', this.name, ' exited with code ', code, ' and signal ', signal);
+            if (code !== 0 && code !== 255) logger('error', `recorder ${this.name} recording ended prematurely with code ${code}`);
+            delete this._recording;
+            resolve();
+          }));
+          logger('rec', `recorder ${this.name} recording ${filename}`);
+          return true; 
+        }
+      }
+      debug('request to start recording failed');
       return false;
     }
     release(token) {
@@ -114,63 +165,49 @@ const jwt = require('jwt-simple');
         debug('valid request to release token');
         this._controlled = '';
         this._channel = '';
+        logger('rec', `recorder ${this.name} control released`);
         return true;
       }
       return false;
 
     }
-    record(token) {
-      debug('request to start recording')
-      if(this._checkToken(token)) { //only a valid token will allow us to start
-        if (!this.recording ) {
-          const args = recargs.replace(/s32le/g,this._fmt).split(' ');
-          const rightnow = new Date();
-          args.push('recordings/' + this.name.replace(/\s/g,'_') + rightnow.toISOString().replace(/\.|:/g,'-') + '.flac');
-          debug('starting recording command is ffmpeg ', args.join(' '));
-          this._recording = spawn('ffmpeg', args, {
-            cwd: path.resolve(__dirname, '../'),
-            stdio: ['pipe', 'ignore', 'pipe']
-          });
-          this._recording.stderr.on('data', chunk => {
-            debugdata('received recording chunk ', chunk.toString());
-          });
-          this._volume.stdout.unpipe();
-          this._volume.stdout.pipe(this._recording.stdin);
-          this.__recordingPromise = new Promise(resolve => this._recording.once('exit', () => {
-            debug('running exited');
-            delete this._recording;
-            resolve();
-            this._recordingPromise = Promise.resolve(); //we need to succeed immediately if we are no longer running
-          }));
-          return true; 
-        }
-      }
-      debug('request to start recording failed');
+    renew(token) {
+      debug('request to renew token for ', this.name);
+      if (this._checkToken(token)) return this._makeToken(this.client);
+      debug('request to renew failed');
       return false;
     }
-    stop(token) {
+    async stop(token) {
       debug('stop request received when recording is ', this._recording !== undefined)
       if (this._checkToken(token)) {
-        if (this.recording) {
-          this._volume.stdout.unpipe(); //disconnect the recording part
-          this._volume.stdout.pipe(devnull()); //now throw ffmpeg output away
-          this._recording.stdin.end(); //write a null to end the recording
-          this._recording.kill(); //and then tell it to close
+        if (this.isRecording) {
+          this._recording.stderr.unpipe(); //disconnect from the volume filter
+          this._recording.stdin.end('q'); //write this to end the recording
+          await this._recordingPromise;
+          this._startVolume();  //go back to plain volume output
+          logger('rec', `recorder ${this.name} stopped recording`);
           return true;
         }
       }
       return false;
     }
-    close() {
-      debug('close request received when ffmpeg (volune) is ', this._volume !== undefined, ' and ffmpeg(recording) is ', this._recording !== undefined);
-      if (this.recording) {
-        this._volume.stdout.unpipe(); //disconnect the recording part
-        this._volume.stdout.pipe(devnull()); //now throw ffmpeg output away
-        this._recording.stdin.end(); //wend the recording
-        this._recording.kill(); //and then tell it to close
+    subscribe(response) {
+      debug('subscribe request received as subscriber no ', this._subscribers.length, ' after ', this._volumeMessageCounter, ' messages');
+      this._subscribers.push(response);
+    }
+    take(client) {
+      debug('take control request received for ', this.name, ' from client ', client);
+      if (this.controlled) return false;
+      const token = this._makeToken(client);
+      logger('rec', `recorder ${this.name} control taken by ${client}`);
+      return token;
+    }
+    unsubscribe(response) {
+      const idx = this._subscribers.indexOf(response);
+      debug('unsubscribe request for subscriber no ', idx, ' after ', this._volumeMessageCounter, ' messages');
+      if (idx >= 0) {
+        this._subscribers.splice(idx,1);  //delete the entry
       }
-      if (this._volume !== undefined) this._volume.kill();
-      return Promise.all([this._volumePromise, this._recordingPromise]);
     }
   }
 

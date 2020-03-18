@@ -28,12 +28,23 @@
   const fs = require('fs').promises;
   const debug = require('debug')('recorder:web');
   const debugfile = require('debug')('recorder:file');
-  const debugmedia = require('debug')('recorder:media');
+ 
+  const debugstatus = require('debug')('recorder:status');
   const http2 = require('http2');
   const Router = require('router');
   const enableDestroy = require('server-destroy');
   const usbDetect = require('usb-detection');
   const Recorder = require('./recorder');
+  const util = require('util');
+  const url = require('url');
+  const etag = require('etag');
+  const logger = require('./logger');
+
+
+
+
+  const setTimeoutPromise = util.promisify(setTimeout);
+
 
   const mimes = {
     '.ico': 'image/x-icon',
@@ -52,22 +63,17 @@
     '.m3u8': 'application/vnd.apple.mpegurl',
     '.ts': 'video/mp2t'
   };
-  const url = require('url');
-  const etag = require('etag');
-  const logger = require('./logger');
-
   let server;
   const recorders = {};
   let statusid = 0;
-  let channelid = 1;
-  const subscribedChannels = {};
+  const subscribedChannels = new Map();
   let statusTimer = 0;
 
   async function startUp (http2, Router,enableDestroy, logger, Recorder, usbDetect) {
     try {
       const routerOpts = {mergeParams: true};
       const router = Router(routerOpts);  //create a router
-
+          
       const options = {
         key: await fs.readFile(path.resolve(__dirname,  'assets/key.pem')),
         cert: await fs.readFile(path.resolve(__dirname,  'assets/certificate.pem')),
@@ -76,11 +82,8 @@
       debug('have server ssl keys about to create the http2 server')
       server = http2.createSecureServer(options, (req,res) => {
         const reqURL = url.parse(req.url).pathname;
-        if (reqURL.indexOf('volume') < 0) {
-          debugfile('request for ', reqURL, ' received');
-        } else {
-          debugmedia('request for ', reqURL, 'received');
-        } 
+        debugfile('request for ', reqURL, ' received');
+
         function final(err) {
           if (err) {
             logger('url','Request Error ' + (err.stack || err.toString()));
@@ -97,72 +100,115 @@
       server.listen(parseInt(process.env.RECORDER_PORT,10),'0.0.0.0');
       enableDestroy(server);
       
-      router.get('/api/recording/:id/take/:channel',checkRecorder, (req,res) => {
+      router.get('/api/:channel/:client/take',checkRecorder, (req,res) => {
         debug('take request received');
-        const token = req.recorder.take(req.params.channel);
+        const client = req.params.client;
+        const token = req.recorder.take(client);
         res.statusCode = 200;
         if (token) {
-          subscribedChannels[req.params.channel].recorder = req.recorder;
-          subscribedChannels[req.params.channel].token = token;
+          //lets see if we are a subscriber
+          for (let [response, entry] of subscribedChannels.entries()) {
+            if (entry.client === client) {
+              entry.recorder = req.recorder;
+              entry.token = token;
+              subscribedChannels.set(response,entry);
+              break;
+            }
+          }
           res.end(JSON.stringify({state: true, token: token}));
-          sendStatus('take',{ id: req.params.id, channel: req.params.channel});
+          sendStatus('take',{ client: client, channel: req.params.channel});
         } else {
           res.end(JSON.stringify({state: false, token: ''}));
         }
       });
-      router.get('/api/recording/:id/renew/:token', checkRecorder,(req,res) => {
-        debug('take request received');
+      router.get('/api/:channel/:token/renew', checkRecorder,(req,res) => {
+        debug('renew request received');
+        const previousToken = req.params.token
         const token = req.recorder.renew(req.params.token);
+  
         res.statusCode = 200;
         if (token) {
+          //replace token in subscriber list if its there
+          for (let [response, entry] of subscribedChannels.entries()) {
+            if (entry.token === previousToken) {
+              entry.token = token;
+              subscribedChannels.set(response,entry);
+              break;
+            }
+          }
           res.end(JSON.stringify({state: true, token: token}));
         } else {
           res.end(JSON.stringify({state: false, token: ''}));
         }
       });
-      router.get('/api/recording/:id/release/:token', checkRecorder, (req,res) => {
-        const channel = req.recorder.channel;
+      router.get('/api/:channel/:token/release', checkRecorder, (req,res) => {
+        debug('release request received')
+        const token = req.params.token
         const state = req.recorder.release(req.params.token)
         res.end(JSON.stringify({state: state}));
         if (state) {
-          subscribedChannels[channel].recorder = null;
-          subscribedChannels[channel].token = '';
-          sendStatus('release', {id:req.params.id});
+          //reset or state
+          for (let [response, entry] of subscribedChannels.entries()) {
+            if (entry.token === token) {
+              entry.token = '';
+              entry.recorder = null
+              subscribedChannels.set(response,entry);
+              break;
+            }
+          }
+
+          sendStatus('release', {channel:req.params.channel});
         }
       });
-      router.get('/api/recording/:id/start/:token', checkRecorder, (req,res) => {
+      router.get('/api/:channel/:token/start', checkRecorder, (req,res) => {
         debug('got a start request with params ', req.params);
         res.end(JSON.stringify({state: req.recorder.record(req.params.token)}));
       });
-      router.get('/api/recording/:id/stop/:token', checkRecorder, (req,res) => {
+      router.get('/api/:channel/:token/stop', checkRecorder, (req,res) => {
         debug('got a stop request with params ', req.params);
         res.end(JSON.stringify({state: req.recorder.stop(req.params.token)}));
       });
-      router.get('/api/status/:channel', (req,res) => {
+      router.get('/api/:channel/volume', checkRecorder, (req, res) => {
         if (req.headers.accept && req.headers.accept == 'text/event-stream') {
-          const channel = req.params.channel;
-          debug('/api/status received creating/reusing channel ', channel.toString());
-          subscribedChannels[channel] = {
-            res: res,
-            recorder: null,
-            token: ''
-          };
+          const recorder =req.recorder;
+          const response = res;
+          debug ('volume subscription received for channel ', recorder.name)
           res.writeHead(200, {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive'
           });
-          debug('wrote headers');
+          recorder.subscribe(response);
+          debug('wrote headers for volume subscription');
           req.once('end', () => {
-            debug('client closed status channel ', channel.toString());
+            debug('client closed volume channel ', recorder.name);
+            recorder.unsubscribe(response);
+          });
+        } else {
+          res.writeHead(404);
+          res.end();
 
-            if (subscribedChannels[channel].recorder !== null) {
-              if (subscribedChannels[channel].recorder.controlled) {
-                debug('need to release the channel')
-                subscribedChannels[channel].recorder.release(subscribedChannels[channel].token);
-              }
+        }
+      });
+      router.get('/api/:client/status', (req,res) => {
+        if (req.headers.accept && req.headers.accept == 'text/event-stream') {
+          const client = req.params.client;
+          const response = res;
+          debug('/api/status received creating/reusing channel ', client);
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
+          });
+          subscribedChannels.set(response, {client: client, token:'', recorder: null});
+          req.once('end', () => {
+            debug('client closed status channel ', client.toString());
+            const entry = subscribedChannels.get(response);
+            if (entry.recorder !== null) {
+              entry.recorder.release(entry.token);
             }
-            delete subscribedChannels[channel];
+            subscribedChannels.delete(response);
+
           });
           const status = {
             scarlett: {
@@ -178,7 +224,7 @@
               name: recorders.yeti !== undefined ? recorders.yeti.name : ''
             }
           };
-          sendStatus('status', status, channel);
+          sendStatus('status', status, response);
 
         } else {
           res.writeHead(404);
@@ -187,27 +233,31 @@
       });
       router.use('/', serveFile);
 
-      usbDetect.on('add:' + process.env.RECORDER_SCARLETT_VID + ':' + process.env.RECORDER_SCARLETT_PID, device => {
-        recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, device.deviceName, 'volumes');
-        sendStatus('add', {id: 'scarlett', name: recorders.scarlett.name});
+      usbDetect.on('add:' + process.env.RECORDER_SCARLETT_VID + ':' + process.env.RECORDER_SCARLETT_PID, async device => {
+        debug('detected scarlett added');
+        await setTimeoutPromise(parseInt(process.env.RECORDER_USB_SETTLE,10));  //allow interface to settle   
+        recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, device.deviceName);
+        sendStatus('add', {channel: 'scarlett', name: recorders.scarlett.name});
         debug('created scarlett recorder');    
       });
-      usbDetect.on('add:' + process.env.RECORDER_YETI_VID + ':' + process.env.RECORDER_YETI_PID, device => {
-        recorders.yeti = new Recorder(process.env.RECORDER_YETI_HW, process.env.RECORDER_YETI_FORMAT, device.deviceName, 'volumey');
-        sendStatus('add', {id: 'yeti', name: recorders.yeti.name});
+      usbDetect.on('add:' + process.env.RECORDER_YETI_VID + ':' + process.env.RECORDER_YETI_PID, async device => {
+        debug('detected yeti added');
+        await setTimeoutPromise(parseInt(process.env.RECORDER_USB_SETTLE,10));  //allow interface to settle 
+        recorders.yeti = new Recorder(process.env.RECORDER_YETI_HW, process.env.RECORDER_YETI_FORMAT, device.deviceName);
+        sendStatus('add', {channel: 'yeti', name: recorders.yeti.name});
         debug('created yeti recorder');
       });
       usbDetect.on('remove:' + process.env.RECORDER_SCARLETT_VID + ':' + process.env.RECORDER_SCARLETT_PID, async device => {
         debug('about to close scarlett recorder');
         await recorders.scarlett.close() //stop the recorder
-        sendStatus('remove', {id: 'scarlett'});
+        sendStatus('remove', {channel: 'scarlett'});
         delete recorders.scarlett;
         debug('closed scarlett recorder');
       });
       usbDetect.on('remove:' + process.env.RECORDER_YETI_VID + ':' + process.env.RECORDER_YETI_PID, async () => {
         debug('about to close yeti recorder');
         await recorders.yeti.close();
-        sendStatus('remove', {id: 'yeti'});
+        sendStatus('remove', {channel: 'yeti'});
         delete recorders.yeti;
         debug('closed yeti recorder');
       });
@@ -224,22 +274,22 @@
 
       debug('currently connected devices ', devices);
       if (devices[0].length > 0) {
-        recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, devices[0][0].deviceName, 'volumes');
+        recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, devices[0][0].deviceName);
       }
       if (devices[1].length > 0) {
-        recorders.yeti = new Recorder(process.env.RECORDER_YETI_HW, process.env.RECORDER_YETI_FORMAT, devices[1][0].deviceName, 'volumey');
+        recorders.yeti = new Recorder(process.env.RECORDER_YETI_HW, process.env.RECORDER_YETI_FORMAT, devices[1][0].deviceName);
       }
       const status = {
         scarlett: {
           connected: recorders.scarlett !== undefined,
           taken: recorders.scarlett !== undefined ? recorders.scarlett.controlled : false,
-          channel: recorders.scarlett !== undefined && recorders.scarlett.controlled ? recorders.scarlett.channel : '',
+          client: recorders.scarlett !== undefined && recorders.scarlett.controlled ? recorders.scarlett.client : '',
           name: recorders.scarlett !== undefined ? recorders.scarlett.name : ''
         },
         yeti: {
           connected: recorders.yeti !== undefined,
           taken: recorders.yeti !== undefined ? recorders.yeti.controlled : false,
-          channel: recorders.yeti !== undefined && recorders.yeti.controlled ? recorders.yeti.channel : '',
+          client: recorders.yeti !== undefined && recorders.yeti.controlled ? recorders.yeti.client : '',
           name: recorders.yeti !== undefined ? recorders.yeti.name : ''
         }
       };
@@ -249,13 +299,13 @@
           scarlett: {
             connected: recorders.scarlett !== undefined,
             taken: recorders.scarlett !== undefined ? recorders.scarlett.controlled : false,
-            channel: recorders.scarlett !== undefined && recorders.scarlett.controlled ? recorders.scarlett.channel : '',
+            client: recorders.scarlett !== undefined && recorders.scarlett.controlled ? recorders.scarlett.client : '',
             name: recorders.scarlett !== undefined ? recorders.scarlett.name : ''
           },
           yeti: {
             connected: recorders.yeti !== undefined,
             taken: recorders.yeti !== undefined ? recorders.yeti.controlled : false,
-            channel: recorders.yeti !== undefined && recorders.yeti.controlled ? recorders.yeti.channel : '',
+            client: recorders.yeti !== undefined && recorders.yeti.controlled ? recorders.yeti.client : '',
             name: recorders.yeti !== undefined ? recorders.yeti.name : ''
           }
         };
@@ -271,67 +321,47 @@
     }
   }
   function checkRecorder(req, res, next) {
-    debug('recording router id = ', req.params.id);
-    if (recorders[req.params.id] !== undefined) {
-      debug('middleware found recorder ', req.params.id);
-      req.recorder =  recorders[req.params.id];
+    debug('recording router channel = ', req.params.channel);
+    if (recorders[req.params.channel] !== undefined) {
+      debug('middleware found recorder ', req.params.channel);
+      req.recorder =  recorders[req.params.channel];
       next();
     } else {
-      next(new Error ('No Recorder for id ' + req.params.id))
+      next(new Error ('No Recorder for id ' + req.params.channel))
     }
 
   }
   function serveFile(req, res, next) {
     //helper for static files
-    let dbug = req.url.substring(0,7).indexOf('volume') <  0 ? debugfile : debugmedia;
     const clientPath = (
-      req.url.substring(0,7).indexOf('volume') <  0 && 
       req.url.indexOf('node_modules') < 0 &&
       req.url.indexOf('lit') < 0 
       )? '../client/' : '../';
-    dbug('clientPath = ', clientPath, ' when req.url = ', req.url);
     let playlist = false;
     //find out where file is
     if (req.url.slice(-1) === '/') req.url += 'index.html';
-    const filename = path.resolve(
-      __dirname,
-      clientPath,
-      req.url.charAt(0) === '/' ? req.url.substring(1) : req.url
-    );
     let match = '';
-    const ext = path.extname(filename);
-    if (ext === 'm3u8' && req.url.indexOf('volume') > 0) {
-      playlist = true;
-      dbug('request for playlist so no e-tag')
-    } else {
-      //if we have an if-modified-since header we can maybe not send the file so create timestamp from it
-      if (req.headers['if-none-match']) {
-        dbug('we had a if-none-match header for url ', req.url);
-        match = req.headers['if-none-match'];
-      }
+    //if we have an if-modified-since header we can maybe not send the file so create timestamp from it
+    if (req.headers['if-none-match']) {
+      debugfile('we had a if-none-match header for url ', req.url);
+      match = req.headers['if-none-match'];
     }
+    
     function statCheck(stat, headers) {
-      dbug('in stat check for file ', req.url);
-      if (!playlist) { //only worry about e-tags for non playlist request
-        const tag = etag(stat);
-        if (match.length > 0) {
-          dbug('if-none-since = \'', match, '\' etag = \'', tag, '\'');
-          if (tag === match) {
-            dbug('we\'ve not modified the file since last cache so sending 304');
-            res.statusCode = 304;
-            res.end();
-            return false; //do not continue with sending the file
-          }
-        }
-        headers['etag'] = tag;
-        dbug('set etag header up ', tag);
+      debugfile('in stat check for file ', req.url);
+      const tag = etag(stat);
+      if (match.length > 0 && tag === match) {
+        debugfile('we\'ve not modified the file since last cache so sending 304');
+        res.statusCode = 304;
+        res.end();
+        return false; //do not continue with sending the file
       }
+      headers['etag'] = tag;
       return true; //tell it to continue
     }
     
-    dbug(`send static file ${filename}`);
     function onError(err) {
-      dbug('Respond with file error ', err);
+      debugfile('Respond with file error ', err);
       if (!err.code === 'ENOENT') {
         next(err);
       } else {
@@ -339,21 +369,26 @@
         next();
       }
     }
-
+    const filename = path.resolve(
+      __dirname,
+      clientPath,
+      req.url.charAt(0) === '/' ? req.url.substring(1) : req.url
+    );
+    debugfile('sending file ', filename)
     res.stream.respondWithFile(
       filename,
-      { 'content-type': mimes[ext] || 'text/plain',
+      { 'content-type': mimes[path.extname(filename)] || 'text/plain',
         'cache-control': 'no-cache' },
       { statCheck, onError });
 
   }
-  function sendStatus(type, data, channel) {
-    debug('send status of event type ', type, ' to ', channel ? 'one channel': 'all channels')
-    if (channel) {
-      sendMessage(subscribedChannels[channel].res, type, data);
+  function sendStatus(type, data, response) {
+    debugstatus('send status of event type ', type, ' to ', response ? 'one client': 'all clients')
+    if (response) {
+      sendMessage(response, type, data);
     } else {
-      for(let channel in subscribedChannels) {
-        sendMessage(subscribedChannels[channel].res, type, data);
+      for(let client of subscribedChannels.keys()) {
+        sendMessage(client, type, data);
       }
     }
 
@@ -364,11 +399,12 @@
     res.write(`event: ${type}\n`);
 //    res.write('retry: 10000\n');
     res.write("data: " + JSON.stringify(data) + '\n\n');
-    debug('message sent with data  ', data);
+    debugstatus('message sent with data  ', data);
   }
 
   async function close() {
   // My process has received a SIGINT signal
+
     if (server) {
       logger('app', 'Starting Server ShutDown Sequence');
       try {

@@ -25,6 +25,7 @@ import { LitElement, html, supportsAdoptingStyleSheets } from '../lit/lit-elemen
 import './rec-volume.js';
 import './rec-led.js';
 import './rec-record-button.js';
+import './rec-switch.js';
 
 class RecApp extends LitElement {
 
@@ -61,7 +62,7 @@ class RecApp extends LitElement {
     this.colour = 'led-red';  //initial state is blinking red
     this.taken = false;
     this.pushed = false;
-    this.eventSrc = new EventSource('/api/status/' + this.subscribeid);
+    this.eventSrc = new EventSource(`/api/${this.subscribeid}/status`);
     this.eventSrc.addEventListener('add', this._eventAdd);
     this.eventSrc.addEventListener('close', this._eventClose);
     this.eventSrc.addEventListener('release', this._eventRelease);
@@ -165,7 +166,7 @@ class RecApp extends LitElement {
   }
   async _callApi(func,channel,token) {
     try {
-      const response = await fetch(`/api/recording/${channel}/${func}${token? '/' + token : ''}`);
+      const response = await fetch(`/api/${channel}${token? '/' + token : ''}/${func}`);
       return await response.json(); 
     } catch(err) {
       console.warn('Error response to Api Request ', func , ' channel ', channel, ' token ', token, ':' , err);
@@ -194,8 +195,7 @@ class RecApp extends LitElement {
   _eventAdd(e) {
     try {
       const added = JSON.parse(e.data);
-      this.state[added.id].connected = true;
-      this.state[added.id].name = added.name;
+      Object.assign(this.state[added.channel],{connected: true, taken: false, client: ''});
       this._manageNewState();
     } catch (e) {
       console.warn('Error in parsing Event Add:', e);
@@ -207,13 +207,13 @@ class RecApp extends LitElement {
     //the server is closing down, so reset everything to wait for it to come up again
     this.pushed = false;
     this.taken = false;
-    this.state = { };
+    this.state = {};
     this.channel = '';
   }
   _eventRelease(e) {
     try {
-      const removed = JSON.parse(e.data);
-      this.state[removed.id].taken = false;
+      const released = JSON.parse(e.data);
+      Object.assign(this.state[released.channel], {taken:false, client: ''});
       this._manageNewState();
     } catch (e) {
       console.warn('Error in parsing Event Release:', e);
@@ -223,8 +223,8 @@ class RecApp extends LitElement {
   _eventRemove(e) {
     try {
       const removed = JSON.parse(e.data);
-      this.state[removed.id].connected = false;
-      this.state[removed.id].taken = false;
+
+      this.state[removed.channel] = {connected: false, taken: false, client: '', name: ''};
       this._manageNewState();
     } catch (e) {
       console.warn('Error in parsing Event Remove:', e);
@@ -243,9 +243,7 @@ class RecApp extends LitElement {
   _eventTake(e) {
     try {
       const taken = JSON.parse(e.data);
-      this.state[taken.id].connected = true;
-      this.state[taken.id].taken = true;
-      this.state[taken.id].channel = taken.channel;
+      Object.assign(this.state[taken.channel], {connected: true, taken: true, client: taken.client});
       this._manageNewState();
     } catch (e) {
       console.warn('Error in parsing Event Remove:', e);
@@ -257,14 +255,15 @@ class RecApp extends LitElement {
     this.availableChannels = [];
     let foundCurrentChannel = false;
     for (let channel in this.state) {
-      const currentChannel = (this.channel === channel)
-      if (this.state[channel].connected) {
+      const currentChannel = (this.channel === channel);
+      const state = this.state[channel];
+      if (state.connected) {
         if (currentChannel) foundCurrentChannel = true;
-        if (currentChannel && this.taken && !this.state[channel].taken) {
+        if (currentChannel && this.taken && !state.taken) {
           //we've lost our taken status
           this.taken = false;;
         }
-        if (!this.state[channel].taken || (this.taken && currentChannel)) {
+        if (!state.taken || (this.taken && currentChannel)) {
           this.availableChannels.push(channel);
         }
       }
