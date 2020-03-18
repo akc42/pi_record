@@ -33,7 +33,7 @@
   const http2 = require('http2');
   const Router = require('router');
   const enableDestroy = require('server-destroy');
-  const usbDetect = require('usb-detection');
+  const usb = require('usb');
   const Recorder = require('./recorder');
   const util = require('util');
   const url = require('url');
@@ -69,7 +69,7 @@
   const subscribedChannels = new Map();
   let statusTimer = 0;
 
-  async function startUp (http2, Router,enableDestroy, logger, Recorder, usbDetect) {
+  async function startUp (http2, Router,enableDestroy, logger, Recorder, usb) {
     try {
       const routerOpts = {mergeParams: true};
       const router = Router(routerOpts);  //create a router
@@ -232,8 +232,10 @@
         }
       });
       router.use('/', serveFile);
+      usb.on('attach', usbAttach);
+      usb.on('detach', usbDetach);
 
-      usbDetect.on('add:' + process.env.RECORDER_SCARLETT_VID + ':' + process.env.RECORDER_SCARLETT_PID, async device => {
+/*      usbDetect.on('add:' + process.env.RECORDER_SCARLETT_VID + ':' + process.env.RECORDER_SCARLETT_PID, async device => {
         debug('detected scarlett added');
         await setTimeoutPromise(parseInt(process.env.RECORDER_USB_SETTLE,10));  //allow interface to settle   
         recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, device.deviceName);
@@ -264,8 +266,17 @@
 
       //start looking for udev events
       usbDetect.startMonitoring();
-
-
+*/
+      let device;
+      if ((device = usb.findByIds(parseInt(process.env.RECORDER_SCARLETT_VID,10), parseInt(process.env.RECORDER_SCARLETT_PID,10))) !== undefined) {
+        console.log('scarlett:', device)
+        //recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, devices[0][0].deviceName);
+      }
+      if ((device = usb.findByIds(parseInt(process.env.RECORDER_YETI_VID,10), parseInt(process.env.RECORDER_YETI_PID,10))) !== undefined) {
+        console.log('yeti:',device)
+        //recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, devices[0][0].deviceName);
+      }
+/*
       //lets see if anthing plugged in and set initial state
       const devices = await Promise.all([
         usbDetect.find(parseInt(process.env.RECORDER_SCARLETT_VID,10),parseInt(process.env.RECORDER_SCARLETT_PID,10)),
@@ -279,6 +290,7 @@
       if (devices[1].length > 0) {
         recorders.yeti = new Recorder(process.env.RECORDER_YETI_HW, process.env.RECORDER_YETI_FORMAT, devices[1][0].deviceName);
       }
+*/
       const status = {
         scarlett: {
           connected: recorders.scarlett !== undefined,
@@ -401,7 +413,12 @@
     res.write("data: " + JSON.stringify(data) + '\n\n');
     debugstatus('message sent with data  ', data);
   }
-
+  function usbAttach(device) {
+    console.log('attached:', device);
+  }
+  function usbDetach(device) {
+    console.log('detatched:', device);
+  }
   async function close() {
   // My process has received a SIGINT signal
 
@@ -413,7 +430,9 @@
         let tmp = server;
         server = null;
         debug('about to stop monitoring udev events')
-        await usbDetect.stopMonitoring();
+        usb.off('attach', usbAttach);
+        usb.off('detach', usbDetach);
+//        await usbDetect.stopMonitoring();
         if (recorders.scarlett !== undefined) {
           //need to shut off the recording smoothly
           debug('stopping scarlett');
@@ -437,7 +456,7 @@
   if (!module.parent) {
     //running as a script, so call startUp
     debug('Startup as main script');
-    startUp(http2, Router, enableDestroy, logger, Recorder, usbDetect);
+    startUp(http2, Router, enableDestroy, logger, Recorder, usb);
     process.on('SIGINT', close);
   }
   module.exports = {
