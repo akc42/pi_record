@@ -328,7 +328,7 @@
       logger('app', 'Recorder Web Server Operational Running on Port:' +
           process.env.RECORDER_PORT + ' with Node Version: ' + process.version);
     } catch(err) {
-      logger('error', err);
+      logger('error', `Error occurred in startup; error ${err}`);
       close();
     }
   }
@@ -437,18 +437,20 @@
           //need to shut off the recording smoothly
           debug('stopping scarlett');
           await recorders.scarlett.close();
+          debug('scarlett stopped');
           delete recorders.scarlett;
         }
         if (recorders.yeti !== undefined) {
           debug('stopping yetti');
           await recorders.yeti.close();
+          debug('yeti stopped');
           delete recorders.yeti;
         }
         debug('About to close Web Server');
         tmp.destroy();
         logger('app', 'Recorder Server ShutDown');
       } catch (err) {
-        logger('error', err);
+        logger('error', `Trying to close caused error:${err}`);
       }
     }
     process.exit(0);
