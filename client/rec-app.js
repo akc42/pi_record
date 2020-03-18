@@ -156,7 +156,7 @@ class RecApp extends LitElement {
         <rec-led .colour=${this.colour} style="--led-size: 12px;"></rec-led>
         <rec-switch .choices=${this.availableChannels} .selected=${this.channel} @switch-change=${this._changeChannel}></rec-switch>
         <rec-record-button ?enabled=${this.taken} ?pushed=${this.recording} @record-change=${this._recordChange}></rec-record-button>  
-        <rec-volume id="volume" .availableChannels=${this.availableChannels} .channel=${this.channel}></rec-volume>
+        <rec-volume id="volume" .channel=${this.channel}></rec-volume>
       </div>
       <div class="feet">
         <div id="left" class="foot"></div>
