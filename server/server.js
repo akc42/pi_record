@@ -234,63 +234,14 @@
       router.use('/', serveFile);
       usb.on('attach', usbAttach);
       usb.on('detach', usbDetach);
+ 
+      if (usb.findByIds(parseInt(process.env.RECORDER_SCARLETT_VID,10), parseInt(process.env.RECORDER_SCARLETT_PID,10)) !== undefined) {
+        recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, process.env.RECORDER_SCARLETT_NAME);
+      }
+      if (usb.findByIds(parseInt(process.env.RECORDER_YETI_VID,10), parseInt(process.env.RECORDER_YETI_PID,10)) !== undefined) {
+        recorders.yeti = new Recorder(process.env.RECORDER_YETI_HW, process.env.RECORDER_YETI_FORMAT, process.env.RECORDER_YETI_NAME);
+      }
 
-/*      usbDetect.on('add:' + process.env.RECORDER_SCARLETT_VID + ':' + process.env.RECORDER_SCARLETT_PID, async device => {
-        debug('detected scarlett added');
-        await setTimeoutPromise(parseInt(process.env.RECORDER_USB_SETTLE,10));  //allow interface to settle   
-        recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, device.deviceName);
-        sendStatus('add', {channel: 'scarlett', name: recorders.scarlett.name});
-        debug('created scarlett recorder');    
-      });
-      usbDetect.on('add:' + process.env.RECORDER_YETI_VID + ':' + process.env.RECORDER_YETI_PID, async device => {
-        debug('detected yeti added');
-        await setTimeoutPromise(parseInt(process.env.RECORDER_USB_SETTLE,10));  //allow interface to settle 
-        recorders.yeti = new Recorder(process.env.RECORDER_YETI_HW, process.env.RECORDER_YETI_FORMAT, device.deviceName);
-        sendStatus('add', {channel: 'yeti', name: recorders.yeti.name});
-        debug('created yeti recorder');
-      });
-      usbDetect.on('remove:' + process.env.RECORDER_SCARLETT_VID + ':' + process.env.RECORDER_SCARLETT_PID, async device => {
-        debug('about to close scarlett recorder');
-        await recorders.scarlett.close() //stop the recorder
-        sendStatus('remove', {channel: 'scarlett'});
-        delete recorders.scarlett;
-        debug('closed scarlett recorder');
-      });
-      usbDetect.on('remove:' + process.env.RECORDER_YETI_VID + ':' + process.env.RECORDER_YETI_PID, async () => {
-        debug('about to close yeti recorder');
-        await recorders.yeti.close();
-        sendStatus('remove', {channel: 'yeti'});
-        delete recorders.yeti;
-        debug('closed yeti recorder');
-      });
-
-      //start looking for udev events
-      usbDetect.startMonitoring();
-*/
-      let device;
-      if ((device = usb.findByIds(parseInt(process.env.RECORDER_SCARLETT_VID,10), parseInt(process.env.RECORDER_SCARLETT_PID,10))) !== undefined) {
-        console.log('scarlett:', device)
-        //recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, devices[0][0].deviceName);
-      }
-      if ((device = usb.findByIds(parseInt(process.env.RECORDER_YETI_VID,10), parseInt(process.env.RECORDER_YETI_PID,10))) !== undefined) {
-        console.log('yeti:',device)
-        //recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, devices[0][0].deviceName);
-      }
-/*
-      //lets see if anthing plugged in and set initial state
-      const devices = await Promise.all([
-        usbDetect.find(parseInt(process.env.RECORDER_SCARLETT_VID,10),parseInt(process.env.RECORDER_SCARLETT_PID,10)),
-        usbDetect.find(parseInt(process.env.RECORDER_YETI_VID,10),parseInt(process.env.RECORDER_YETI_PID,10))
-      ]);
-
-      debug('currently connected devices ', devices);
-      if (devices[0].length > 0) {
-        recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, devices[0][0].deviceName);
-      }
-      if (devices[1].length > 0) {
-        recorders.yeti = new Recorder(process.env.RECORDER_YETI_HW, process.env.RECORDER_YETI_FORMAT, devices[1][0].deviceName);
-      }
-*/
       const status = {
         scarlett: {
           connected: recorders.scarlett !== undefined,
@@ -409,17 +360,45 @@
     statusid++;
     res.write(`id: ${statusid.toString()}\n`);
     res.write(`event: ${type}\n`);
-//    res.write('retry: 10000\n');
     res.write("data: " + JSON.stringify(data) + '\n\n');
     debugstatus('message sent with data  ', data);
   }
-  function usbAttach(device) {
-    console.log('attached:', device);
+  async function usbAttach(device) {
+    if (device.deviceDescriptor.idVendor === parseInt(process.env.RECORDER_SCARLETT_VID,10) && 
+        device.deviceDescriptor.idProduct === parseInt(process.env.RECORDER_SCARLETT_PID,10)) {
+      debug('detected scarlett added');
+      await setTimeoutPromise(parseInt(process.env.RECORDER_USB_SETTLE,10));  //allow interface to settle   
+      recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, process.env.RECORDER_SCARLETT_NAME);
+      sendStatus('add', {channel: 'scarlett', name: recorders.scarlett.name});
+      debug('created scarlett recorder');    
+    } else if (device.deviceDescriptor.idVendor === parseInt(process.env.RECORDER_YETI_VID,10) && 
+        device.deviceDescriptor.idProduct === parseInt(process.env.RECORDER_YETI_PID,10)) {
+      debug('detected yeti added');
+      await setTimeoutPromise(parseInt(process.env.RECORDER_USB_SETTLE,10));  //allow interface to settle   
+      recorders.yeti = new Recorder(process.env.RECORDER_YETI_HW, process.env.RECORDER_YETI_FORMAT, process.env.RECORDER_YETI_NAME);
+      sendStatus('add', {channel: 'yeti', name: recorders.yeti.name});
+      debug('created yeti recorder');    
+    
+    }
   }
-  function usbDetach(device) {
-    console.log('detatched:', device);
+  async function usbDetach(device) {
+    if (device.deviceDescriptor.idVendor === parseInt(process.env.RECORDER_SCARLETT_VID,10) && 
+        device.deviceDescriptor.idProduct === parseInt(process.env.RECORDER_SCARLETT_PID,10)) {
+      debug('about to close scarlett recorder');
+      await recorders.scarlett.close() //stop the recorder
+      sendStatus('remove', {channel: 'scarlett'});
+      delete recorders.scarlett;
+      debug('closed scarlett recorder');
+    } else if (device.deviceDescriptor.idVendor === parseInt(process.env.RECORDER_YETI_VID,10) && 
+        device.deviceDescriptor.idProduct === parseInt(process.env.RECORDER_YETI_PID,10)) {
+      debug('about to close yeti recorder');
+      await recorders.yeti.close();
+      sendStatus('remove', {channel: 'yeti'});
+      delete recorders.yeti;
+      debug('closed yeti recorder');
+    }
   }
-  async function close() {
+  async function close(usb) {
   // My process has received a SIGINT signal
 
     if (server) {
@@ -459,7 +438,7 @@
     //running as a script, so call startUp
     debug('Startup as main script');
     startUp(http2, Router, enableDestroy, logger, Recorder, usb);
-    process.on('SIGINT', close);
+    process.on('SIGINT', () => close(usb));
   }
   module.exports = {
     startUp: startUp,
