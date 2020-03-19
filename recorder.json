@@ -1,7 +1,7 @@
 {
   "apps" : [
     {
-      "name" : "recoder",
+      "name" : "recorder",
       "script" : "server/server.js",
       "args" : [
         "--color"
