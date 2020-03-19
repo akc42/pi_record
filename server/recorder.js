@@ -138,8 +138,9 @@ const sedargs = ['-u', '-n','s/.*FTPK:\\([^d]*\\).*/\\1/p'];
           this._volume.stdin.end('q');
           await this._volumePromise;
           const rightnow = new Date();
-          const filename = this.name.replace(/\s/g,'_') + rightnow.toISOString().replace(/\.|:/g,'-') + '.flac';
-          const args = recargs.replace('hw:dddd', 'hw:' + this._device).replace(/s32le/g,this._fmt).replace('out.flac',filename).split(' ');
+          const filename = `${process.env.RECORDER_RECORDINGS}/` + 
+            this.name.replace(/\s/g,'_') + '_' + rightnow.toISOString().replace(/\.|:/g,'-') + '.flac';
+          const args = recargs.replace('hw:dddd', 'hw:' + this._device).replace(/s32le/g,this._fmt).replace('recordings/out.flac',filename).split(' ');
           debug('starting recording command is ffmpeg ', args.join(' '));
           this._recording = spawn('ffmpeg', args, {
             cwd: path.resolve(__dirname, '../'),
