@@ -163,6 +163,7 @@ const sedargs = ['-u', '-n','s/.*FTPK:\\([^d]*\\).*/\\1/p'];
       debug('request to release token made');
       if (this._checkToken(token)) {
         debug('valid request to release token');
+        if (this.isRecording) this.stop(token);
         this._controlled = '';
         this._channel = '';
         logger('rec', `recorder ${this.name} control released`);
