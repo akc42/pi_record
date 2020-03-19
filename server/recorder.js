@@ -77,6 +77,12 @@ const sedargs = ['-u', '-n','s/.*FTPK:\\([^d]*\\).*/\\1/p'];
       } catch(e) {
         debugctl('jwt decode threw for client', this.client);
         debug('jwt decode threw error ', e);
+        /* 
+          the most likly cause of this is timeout of the control because it wasn't renewed.  We should
+          stop the recording if it is going
+      
+        */
+        this._stop();
         return false;
       }
     }
@@ -116,6 +122,19 @@ const sedargs = ['-u', '-n','s/.*FTPK:\\([^d]*\\).*/\\1/p'];
         if (code !== 0 && code !== 255) logger('error', `recorder ${this.name} volume stream ended prematurely with code ${code}`);
         resolve(); 
       }));      
+    }
+    async _stop() {
+      //internal function to stop recording
+      if (this.isRecording) {
+        this._recording.stderr.unpipe(); //disconnect from the volume filter
+        this._recording.stdin.end('q'); //write this to end the recording
+        await this._recordingPromise;
+        this._startVolume();  //go back to plain volume output
+        logger('rec', `recorder ${this.name} stopped recording`);
+        return true;
+      }
+      return false;
+   
     }
     async close() {
       debug('close request received when ffmpeg (volume) is ', this._volume !== undefined, ' and ffmpeg(recording) is ', this._recording !== undefined);
@@ -182,14 +201,7 @@ const sedargs = ['-u', '-n','s/.*FTPK:\\([^d]*\\).*/\\1/p'];
     async stop(token) {
       debug('stop request received when recording is ', this._recording !== undefined)
       if (this._checkToken(token)) {
-        if (this.isRecording) {
-          this._recording.stderr.unpipe(); //disconnect from the volume filter
-          this._recording.stdin.end('q'); //write this to end the recording
-          await this._recordingPromise;
-          this._startVolume();  //go back to plain volume output
-          logger('rec', `recorder ${this.name} stopped recording`);
-          return true;
-        }
+        return await this._stop();
       }
       return false;
     }
