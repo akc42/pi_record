@@ -103,9 +103,9 @@
       router.get('/api/:channel/:client/take',checkRecorder, (req,res) => {
         debug('take request received');
         const client = req.params.client;
-        const token = req.recorder.take(client);
+        const {state, token } = req.recorder.take(client);
         res.statusCode = 200;
-        if (token) {
+        if (state) {
           //lets see if we are a subscriber
           for (let [response, entry] of subscribedChannels.entries()) {
             if (entry.client === client) {
@@ -158,15 +158,15 @@
           sendStatus('release', {channel:req.params.channel});
         }
       });
-      router.get('/api/:channel/:token/start', checkRecorder, (req,res) => {
+      router.get('/api/:channel/:token/start', checkRecorder, async (req,res) => {
         debug('got a start request with params ', req.params);
         res.statusCode = 200;
-        res.end(JSON.stringify(req.recorder.record(req.params.token)));
+        res.end(JSON.stringify(await req.recorder.record(req.params.token)));
       });
       router.get('/api/:channel/:token/stop', checkRecorder, async (req,res) => {
         debug('got a stop request with params ', req.params);
         res.statusCode = 200;
-        res.end(JSON.stringify({state: await req.recorder.stop(req.params.token)}));
+        res.end(JSON.stringify(await req.recorder.stop(req.params.token)));
       });
       router.get('/api/:channel/volume', checkRecorder, (req, res) => {
         if (req.headers.accept && req.headers.accept == 'text/event-stream') {

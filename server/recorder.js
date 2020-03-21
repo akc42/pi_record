@@ -68,7 +68,10 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
       return this._name;
     }
     get controlled() {
-      if (this._controlled.length === 0) return false;
+      if (this._controlled.length === 0) {
+        debugctl('zero length controlling token, so must fail');
+        return false;
+      }
       try {
         const payload = jwt.decode(this._controlled,process.env.RECORDER_TOKEN);
         debugctl('jwt payload ', payload);
@@ -93,7 +96,10 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
       return this._recording !== undefined;
     }
     _checkToken(token) {
-      if (token !== this._controlled) return false;
+      if (token !== this._controlled) {
+        debugctl('token mismatch token = ', token, ' expected = ', this._controlled);
+        return false;
+      }
       return this.controlled;
     }
     _makeToken(client) {
@@ -128,12 +134,12 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
       if (this.isRecording) {
         this._recording.stderr.unpipe(); //disconnect from the volume filter
         this._recording.stdin.end('q'); //write this to end the recording
-        await this._recordingPromise;
+        const filekept = await this._recordingPromise;
         this._startVolume();  //go back to plain volume output
         logger('rec', `recorder ${this.name} stopped recording`);
-        return true;
+        return {state: true, kept: filekept};
       }
-      return false;
+      return {state:false};
    
     }
     async close() {
@@ -157,8 +163,8 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
           this._volume.stdin.end('q');
           await this._volumePromise;
           const rightnow = new Date();
-          const basename = this.name.charAt(0) + '_' + rightnow.toISOString().substring(8,10).replace(/T|:/g,'');
-          const filename = `${process.env.RECORDER_RECORDINGS}/${basename}.flac`;
+          const basename = this.name.charAt(0) + '_' + rightnow.toISOString().substring(8,18).replace(/T|:/g,'') + '.flac';
+          const filename = `${process.env.RECORDER_RECORDINGS}/${basename}`;
           const args = recargs.replace('hw:dddd', 'hw:' + this._device).replace(/s32le/g,this._fmt).replace('recordings/out.flac',filename).split(' ');
           debug('starting recording command is ffmpeg ', args.join(' '));
           this._recording = spawn('ffmpeg', args, {
@@ -172,11 +178,14 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
             if (code !== 0 && code !== 255) logger('error', `recorder ${this.name} recording ended prematurely with code ${code}`);
             const recordingEndTime = new Date().getTime();
             const timeLimit = parseInt(process.env.RECORDER_TIME_LIMIT,10);
+            let kept = true;
             if ((recordingEndTime - recordingStartTime) < timeLimit) {
               await fs.unlink(path.resolve(__dirname,'../', filename)); //delete the recording because it is too short
+              kept = false
             }
+            debug('recoding kept is ', kept);
             delete this._recording;
-            resolve();
+            resolve(kept);
           }));
           logger('rec', `recorder ${this.name} recording ${filename}`);
           return {state: true, name: basename}; 
