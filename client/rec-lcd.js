@@ -21,18 +21,39 @@ import { LitElement, html } from '../lit/lit-element.js';
 import { Screen } from './lcd/classes.js';
 
 class RecLcd extends LitElement {
+  static PIXEL = 2;
+  static COLUMNS = 20;
+  static ROWS = 4;
+  static CHANNEL_START = 0;
+  static CHANNEL_LENGTH = 12;
+  static STATE_START = 13;
+  static STATE_LENGTH = 7;
+  static FILE_START = 20;
+  static FILE_LENGTH = 20;
+  static LOUD_START = 40;
+  static LOUD_LENGTH = 20;
+  static PEAK_START = 60;
+  static PEAK_LENGTH = 20;
   static get properties() {
     return {
-      width: {type: Number, reflect:true},
-      height: {type: Number, reflect: true},
-      content: {type: Array}
+      pixelSize: {type: Number},
+      channel: {type: String},
+      state: {type:String},
+      filename: {type: String},
+      loudness: {type: String},
+      leftpeak: {type: String},
+      rightpeak: {type: String}
     };
   }
   constructor() {
     super();
-    this.width = 40; //setting default values - happens to be what we will need
-    this.height = 3;
-    this.content=[];
+    this.pixelSize = RecLcd.PIXEL;
+    this.channel = '';
+    this.state = 'Off';
+    this.filename = '';
+    this.loudness = '';
+    this.leftpeak = '';
+    this.rightpeak = '';
     this.animationInProgress = true; //prevents any early display
   }
   connectedCallback() {
@@ -43,18 +64,24 @@ class RecLcd extends LitElement {
   }
   update(changed) {
     if (this.screen !== undefined) {
-      if (changed.has('width') || changed.has('height')) {
-        this.firstUpdated();  //just creates a new screen
-      } else if (changed.has('content')) this._displayContent();
+      if (changed.has('pixelSize') ) {
+        this.firstUpdated();  //just creates a new screen and displays everything
+      } else {
+        if (changed.has('channel')) this._displayContent('channel') ;
+        if (changed.has('state')) this._displayContent('state');
+        if (changed.has('filename')) this._displayContent('filename');
+        if (changed.has('loudness')) this._displayContent('loudness');
+        if (changed.has('leftpeak') || changed.has('rightpeak')) this._displayContent('peak');
+      }
     }
     super.update(changed);
   }
   firstUpdated() {
     this.screen = new Screen({
       elem: this.shadowRoot.querySelector('#screen'),
-      rows: this.height,
-      columns: this.width,
-      pixelSize: 1,
+      rows: RecLcd.ROWS,
+      columns: RecLcd.COLUMNS,
+      pixelSize: this.pixelSize,
       pixelColor: "#000"
     });
     this.animationInProgress = false;
@@ -86,18 +113,44 @@ class RecLcd extends LitElement {
       <div id="screen" class="display"></div>
     `;
   }
-  _displayContent() {
+  _displayContent(field = 'All') {
+    const f = field;
     if (this.animationInProgress) return;
     this.animationInProgress = true;
     requestAnimationFrame(() => {
-      this.screen.clearScreen();
-      if (this.content.length > 0) {
-        for(let i = 0; i < Math.min(this.content.length,this.height); i++) {
-          this.screen.writeString(this.content[i], i * this.width)
-        }
-      }
+      if (f === 'All') this.screen.clearScreen();
+      if (this._shouldDisplay(f, 'channel', RecLcd.CHANNEL_START, RecLcd.CHANNEL_LENGTH)) {
+        this.screen.writeString(this.channel.left(RecLcd.CHANNEL_LENGTH));
+      } 
+      if (this._shouldDisplay(f, 'state', RecLcd.STATE_START, RecLcd.STATE_LENGTH)) {
+        this.screen.writeString(this.state.left(RecLcd.STATE_LENGTH));
+      } 
+      if (this._shouldDisplay(f, 'filename', RecLcd.FILE_START, RecLcd.FILE_LENGTH)) {
+        this.screen.writeString(this.filename.left(RecLcd.FILE_LENGTH));
+      } 
+      if (this._shouldDisplay(f, 'loudness', RecLcd.LOUD_START, RecLcd.LOUD_LENGTH)) {
+        const loud = this.loudness.length > 0 ? `Loudness: ${this.loudness.left(5).padStart(5,' ')} LUFS`.left(RecLcd.LOUD_LENGTH) : '';
+        this.screen.writeString(loud);
+      } 
+      if (this._shouldDisplay(f, 'peak', RecLcd.PEAK_START, RecLcd.PEAK_LENGTH)) {
+        const peak = this.leftpeak.length > 0 || this.rightpeak.length > 0 ?
+          `Peak: ${this.leftpeak.left(5).padStart(5,' ')} ${this.rightpeak.left(5).padStart(5,' ')} dbFS`.left(RecLcd.PEAK_LENGTH) : '';
+        this.screen.writeString(peak);
+      } 
+
       this.animationInProgress = false;
     });
   }
+  _shouldDisplay(field, screenfield, start, length) {
+    if (field === screenfield || field === 'All') {
+      if (field !== 'All') {
+        for (let i = 0; i < length; i++) {
+          this.screen.clearCharacter(start + i);
+        }
+      };
+      return true;
+    }
+    return false;
+  } 
 }
 customElements.define('rec-lcd', RecLcd);
