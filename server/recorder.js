@@ -179,17 +179,17 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
             resolve();
           }));
           logger('rec', `recorder ${this.name} recording ${filename}`);
-          return basename; 
+          return {state: true, name: basename}; 
         }
       }
       debug('request to start recording failed');
-      return '';
+      return {state: false};
     }
-    release(token) {
+    async release(token) {
       debug('request to release token made');
       if (this._checkToken(token)) {
         debug('valid request to release token');
-        if (this.isRecording) this.stop(token);
+        if (this.isRecording) await this.stop(token);
         this._controlled = '';
         this._channel = '';
         logger('rec', `recorder ${this.name} control released`);
@@ -200,9 +200,9 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
     }
     renew(token) {
       debug('request to renew token for ', this.name);
-      if (this._checkToken(token)) return this._makeToken(this.client);
+      if (this._checkToken(token)) return {state: true, token: this._makeToken(this.client)};
       debug('request to renew failed');
-      return false;
+      return {state: false };
     }
     async stop(token) {
       debug('stop request received when recording is ', this._recording !== undefined)
@@ -217,10 +217,10 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
     }
     take(client) {
       debug('take control request received for ', this.name, ' from client ', client);
-      if (this.controlled) return false;
+      if (this.controlled) return {state: false};
       const token = this._makeToken(client);
       logger('rec', `recorder ${this.name} control taken by ${client}`);
-      return token;
+      return {state: true, token: token};
     }
     unsubscribe(response) {
       const idx = this._subscribers.indexOf(response);

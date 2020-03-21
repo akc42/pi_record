@@ -124,10 +124,10 @@
       router.get('/api/:channel/:token/renew', checkRecorder,(req,res) => {
         debug('renew request received');
         const previousToken = req.params.token
-        const token = req.recorder.renew(req.params.token);
-  
+        const {state, token} = req.recorder.renew(req.params.token);  
         res.statusCode = 200;
-        if (token) {
+        res.end(JSON.stringify({state: state, token: token}));
+        if (state) {
           //replace token in subscriber list if its there
           for (let [response, entry] of subscribedChannels.entries()) {
             if (entry.token === previousToken) {
@@ -135,16 +135,14 @@
               subscribedChannels.set(response,entry);
               break;
             }
-          }
-          res.end(JSON.stringify({state: true, token: token}));
-        } else {
-          res.end(JSON.stringify({state: false, token: ''}));
+          }          
         }
       });
-      router.get('/api/:channel/:token/release', checkRecorder, (req,res) => {
+      router.get('/api/:channel/:token/release', checkRecorder, async (req,res) => {
         debug('release request received')
         const token = req.params.token
-        const state = req.recorder.release(req.params.token)
+        const state = await req.recorder.release(req.params.token);
+        res.statusCode = 200;
         res.end(JSON.stringify({state: state}));
         if (state) {
           //reset or state
@@ -162,11 +160,13 @@
       });
       router.get('/api/:channel/:token/start', checkRecorder, (req,res) => {
         debug('got a start request with params ', req.params);
-        res.end(JSON.stringify({name: req.recorder.record(req.params.token)}));
+        res.statusCode = 200;
+        res.end(JSON.stringify(req.recorder.record(req.params.token)));
       });
-      router.get('/api/:channel/:token/stop', checkRecorder, (req,res) => {
+      router.get('/api/:channel/:token/stop', checkRecorder, async (req,res) => {
         debug('got a stop request with params ', req.params);
-        res.end(JSON.stringify({loudness: req.recorder.stop(req.params.token)}));
+        res.statusCode = 200;
+        res.end(JSON.stringify({state: await req.recorder.stop(req.params.token)}));
       });
       router.get('/api/:channel/volume', checkRecorder, (req, res) => {
         if (req.headers.accept && req.headers.accept == 'text/event-stream') {
