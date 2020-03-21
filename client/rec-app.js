@@ -44,8 +44,7 @@ class RecApp extends LitElement {
       filename: {type: String},
       loudness: {type: String},
       leftpeak: {type: String},
-      rightpeak: {type: String},
-      takeable: {type: Boolean}
+      rightpeak: {type: String}
     };
   }
   constructor() {
@@ -63,7 +62,6 @@ class RecApp extends LitElement {
     this.leftpeak = '';
     this.rightpeak = '';
     this.microphones = {};
-    this.takeable = false;
     this._eventAdd = this._eventAdd.bind(this);
     this._eventClose = this._eventClose.bind(this);
     this._eventRelease = this._eventRelease.bind(this);
@@ -119,9 +117,6 @@ class RecApp extends LitElement {
       } else {
         this.channelname = '';
       }
-    }
-    if (changed.has('takeable')  && this.takeable) {
-      this. _takeChannel();
     }
     super.updated(changed);
   }
@@ -232,9 +227,11 @@ class RecApp extends LitElement {
   _changeChannel(e) {
     if (this.channel !== e.details) {
       const newChannel = e.details;
+      console.log(new Date().toISOString().substring(11,19),' M:', this.token);
       const {state} = this._callApi('release', this.channel, this.token);
       if (state) {
         this.token = ''
+        console.log(new Date().toISOString().substring(11,19),' N:', this.token);
         this.taken = false
         this.keepRenewing = false;
       }
@@ -245,6 +242,7 @@ class RecApp extends LitElement {
         this.taken = true;
         this.channel = newChannel;
         this.token = token;
+        console.log(new Date().toISOString().substring(11,19),' O:', this.token);
         this.state = 'Control';
         this.colour = 'led-blue';
       }
@@ -285,7 +283,7 @@ class RecApp extends LitElement {
   _eventRemove(e) {
     try {
       const {channel} = JSON.parse(e.data);
-
+      console.log(new Date().toISOString().substring(11,19),' Channel Removed ', channel);
       this.microphones[channel] = {connected: false, taken: false, client: '', name: ''};
       this._manageNewState();
     } catch (e) {
@@ -317,42 +315,61 @@ class RecApp extends LitElement {
 
   }
   _manageNewState() {
+    console.log(new Date().toISOString().substring(11,19),' into Managed State our channel ', this.channel, ' taken ', this.taken);
     this.availableChannels = [];
     let foundCurrentChannel = false;
     let firstConnectedChannel = ''
     for (let channel in this.microphones) {
+      console.log(new Date().toISOString().substring(11,19),' Checking Microphone ', channel);
       const currentChannel = (this.channel === channel);
       const microphone = this.microphones[channel];
       if (microphone.connected) {
-        if (firstConnectedChannel.length === 0) firstConnectedChannel = channel;
+        if (firstConnectedChannel.length === 0) {
+          console.log(new Date().toISOString().substring(11,19),' Setting First Connected Channel to ', channel);
+          firstConnectedChannel = channel;
+        }
         if (currentChannel) foundCurrentChannel = true;
         if (currentChannel && this.taken && !microphone.taken) {
+          console.log(new Date().toISOString().substring(11,19),' lost our taken status ', channel);
           //we've lost our taken status
           this.taken = false;
           this.state = 'Monitor';
+          this.ticker.destroy();
         }
         if (!microphone.taken || (this.taken && currentChannel)) {
+          console.log(new Date().toISOString().substring(11,19),' An available Channel ', channel);
           this.availableChannels.push(channel);
         }
       }
     } 
     if (!foundCurrentChannel) {
+      console.log(new Date().toISOString().substring(11,19),' Did not find our channel ', this.channel);
+      if (this.taken) this.ticker.destroy();
       this.channel = '';
       this.taken = false; //or that we have it taken
     }
+    if (firstConnectedChannel.length === 0) {
+      console.log(new Date().toISOString().substring(11,19),' No connected channels');
+      this.state = 'No Mic';
+    }
     if (this.availableChannels.length > 0) {
+
       if (!this.taken) {
-        //we haven't taken any channel, so lets try to take one
-        if (this.channel.length === 0) {
-          this.channel = this.availableChannels[0];  //select the first one for now
-        }
+        this.state = 'Monitor';
+        this.colour = 'led-yellow';
+        //we haven't taken any channel, so we need to take an available channel
+        this.channel = this.availableChannels[0];  //select the first one for now
+        console.log(new Date().toISOString().substring(11,19),' Go and take channel ', this.channel);
         this._takeChannel();
       } 
     } else {
       this.colour = 'led-yellow';
+
+      console.log(new Date().toISOString().substring(11,19),' No available channels ', this.channel);
       if (!foundCurrentChannel && firstConnectedChannel.length > 0) {
         this.channel = firstConnectedChannel;
-        this.state = 'Monitor'
+        this.state = 'Monitor'      
+        console.log(new Date().toISOString().substring(11,19),' So just monitor ', this.channel);
       }
     }
   }
@@ -365,12 +382,14 @@ class RecApp extends LitElement {
     if (this.pushed !== e.detail  && this.taken) {
       const newPushState = e.detail;
       if (newPushState) {
+        console.log(new Date().toISOString().substring(11,19),' P:', this.token);
         const {state, name} = await this._callApi('start', this.channel, this.token);
         if (state) {
           this.pushed = true
           this.filename = name;
         }
       } else {
+        console.log(new Date().toISOString().substring(11,19),' Q:', this.token);
         const {state, kept} = await this._callApi('stop', this.channel, this.token);
         this.pushed = false;
         if (!(state && kept)) this.filename = '';
@@ -380,9 +399,11 @@ class RecApp extends LitElement {
     
   }
   _takeChannel() {
+    console.log(new Date().toISOString().substring(11,19),' T:', this.token);
     this._callApi('take',this.channel, this.subscribeid).then( async response => {
       if (response.state) {
         this.token = response.token;
+        console.log(new Date().toISOString().substring(11,19),' U:', this.token);
         this.taken = true;
         this.colour = 'led-blue';
         this.ticker = new Ticker(4*60*1000); //create a renew ticker for 4 minutes
@@ -391,11 +412,14 @@ class RecApp extends LitElement {
           let keepRenewing = true;
           while(keepRenewing) {
             await this.ticker.nextTick;
+            console.log(new Date().toISOString().substring(11,19),' R:', this.token);
             const {state, token} = await this._callApi('renew', this.channel, this.token)
             if (state) {
               this.token = token;
+              console.log(new Date().toISOString().substring(11,19),' S:', this.token);
             } else {
               this.token = '';
+              console.log(new Date().toISOString().substring(11,19),' V:', this.token);
               this.state = 'Monitor';
               this.taken = false;
               this.colour = 'led-yellow';
@@ -404,6 +428,7 @@ class RecApp extends LitElement {
           }
         } catch(e) {
           //someone closed the ticker
+          console.log(new Date().toISOString().substring(11,19),' W:', this.token);
         }
       }
     });
