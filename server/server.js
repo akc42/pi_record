@@ -162,11 +162,11 @@
       });
       router.get('/api/:channel/:token/start', checkRecorder, (req,res) => {
         debug('got a start request with params ', req.params);
-        res.end(JSON.stringify({state: req.recorder.record(req.params.token)}));
+        res.end(JSON.stringify({name: req.recorder.record(req.params.token)}));
       });
       router.get('/api/:channel/:token/stop', checkRecorder, (req,res) => {
         debug('got a stop request with params ', req.params);
-        res.end(JSON.stringify({state: req.recorder.stop(req.params.token)}));
+        res.end(JSON.stringify({loudness: req.recorder.stop(req.params.token)}));
       });
       router.get('/api/:channel/volume', checkRecorder, (req, res) => {
         if (req.headers.accept && req.headers.accept == 'text/event-stream') {

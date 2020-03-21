@@ -24,7 +24,10 @@ class RecVolume extends LitElement {
   static get properties() {
     return {
       channel: {type: String},  //requested channel
-      running: {type: Boolean}
+      running: {type: Boolean},
+      overallLoudness: {type:String},
+      leftPeak: {type: String},
+      rightPeak: {type: String}
     };
   }
   constructor() {
@@ -34,17 +37,29 @@ class RecVolume extends LitElement {
     this._receiveVolumeData = this._receiveVolumeData.bind(this);
     this.animationInProgress = true;
   }
-
   updated(changed) {
     if (changed.has('channel') && this.ctx !== undefined && changed.get('channel') !== undefined) {
       //we are not in the start up phase
       if (this.channel.length > 0 && !this.running) this._startChannel(); 
       else if (this.channel.length === 0 && this.running) this._stopChannel();     
     }
+    if (this.receivedFirstDataMessage) {
+      if (changed.has('overallLoudness') || changed.has('leftPeak') || changed.has('rightPeak')) {
+        this.dispatchEvent(new CustomEvent('loudness-change',{
+          bubbles: true,
+          cancel: true,
+          detail: {
+            integrated: this.overallLoudness,
+            leftPeak: this.leftPeak,
+            rightPeak: this.rightPeak
+          }
+        }));
+      }
+    }
     super.updated(changed);
   }
   firstUpdated() {
-    this.canvas = this.shadowRoot.querySelector('canvas');    
+    this.canvas = this.shadowRoot.querySelector('#peak');    
     this.ctx = this.canvas.getContext('2d');
     this.grad = this.ctx.createLinearGradient(0,0,0,448);
     this.grad.addColorStop(0,'red');
@@ -57,7 +72,7 @@ class RecVolume extends LitElement {
       this.ctx.fillStyle = '#a0a0a0';
       this.ctx.fillRect(0,0,this.canvas.width, this.canvas.height);
       //now make a scale each side of the canvas
-      this.ctx.textAlign = 'right';
+      this.ctx.textAlign = 'centre';
       this.ctx.textBaseline = 'middle'
       this.ctx.fillStyle = 'white';
       this.ctx.strokeStyle = 'white';
@@ -116,8 +131,8 @@ class RecVolume extends LitElement {
           background-color: transparent;
           display: flex;
           align-items: center;
-          justify-content: center;
-          flex-direction: column;
+          justify-content: space-between;
+          flex-direction: row;
         }
 
         canvas {
@@ -125,83 +140,27 @@ class RecVolume extends LitElement {
           box-shadow: 0px 0px 5px 5px #000000;
           background-color: #777;
         }
-        #container {
-          position:relative;
-          height: 40px;
-          width: 40px;
-        }
-        #reset {
-          position:absolute;
-          top:10px;
-          left:10px;
-          color: black;
-          border-radius:50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size:10px;
-          font-weight: bold;
-          height:20px;
-          width: 20px;
-          background-image: -webkit-radial-gradient(  50%   0%,  8% 50%, hsla(0,0%,100%,.5) 0%, hsla(0,0%,100%,0) 100%),
-            -webkit-radial-gradient(  50% 100%, 12% 50%, hsla(0,0%,100%,.6) 0%, hsla(0,0%,100%,0) 100%),
-            -webkit-radial-gradient(   0%  50%, 50%  7%, hsla(0,0%,100%,.5) 0%, hsla(0,0%,100%,0) 100%),
-            -webkit-radial-gradient( 100%  50%, 50%  5%, hsla(0,0%,100%,.5) 0%, hsla(0,0%,100%,0) 100%),
-            
-            -webkit-repeating-radial-gradient( 50% 50%, 100% 100%, hsla(0,0%,  0%,0) 0%, hsla(0,0%,  0%,0)   3%, hsla(0,0%,  0%,.1) 3.5%),
-            -webkit-repeating-radial-gradient( 50% 50%, 100% 100%, hsla(0,0%,100%,0) 0%, hsla(0,0%,100%,0)   6%, hsla(0,0%,100%,.1) 7.5%),
-            -webkit-repeating-radial-gradient( 50% 50%, 100% 100%, hsla(0,0%,100%,0) 0%, hsla(0,0%,100%,0) 1.2%, hsla(0,0%,100%,.2) 2.2%),
-            
-            -webkit-radial-gradient( 50% 50%, 200% 50%, hsla(0,0%,90%,1) 5%, hsla(0,0%,85%,1) 30%, hsla(0,0%,60%,1) 100%);
 
-        }
-        #reset::before, #reset::after {
-          content: "";
-          top: 0;
-          left: 0;
-          position: absolute;
-          width: inherit;
-          height: inherit;
-          border-radius: inherit;
-          
-          /* fake conical gradients */
-          background-image: -webkit-radial-gradient(  50%   0%, 10% 50%, hsla(0,0%,0%,.1) 0%, hsla(0,0%,0%,0) 100%),
-            -webkit-radial-gradient(  50% 100%, 10% 50%, hsla(0,0%,0%,.1) 0%, hsla(0,0%,0%,0) 100%),
-            -webkit-radial-gradient(   0%  50%, 50% 10%, hsla(0,0%,0%,.1) 0%, hsla(0,0%,0%,0) 100%),
-            -webkit-radial-gradient( 100%  50%, 50% 06%, hsla(0,0%,0%,.1) 0%, hsla(0,0%,0%,0) 100%);
-        }
-        #reset:before { transform: rotate( 65deg); }
-        #reset:after { transform: rotate(-65deg); }
-        
-        .label {
-          color: white;
-          text-align: center;
-          width: 40px;
-          font-size:12px;
-        }
-        .r {
-          text-align:center;
-          padding-left:2px;
-        }
       </style>
-      <canvas width="120" height="480"></canvas>
-      <div id="container" @click=${this._reset}>
-        <div id="reset"><div class="r">R</div></div>
-      </div>
-      <div class="label">Reset Peak</div>
+      <canvas id="loud" width="120" height="480"></canvas>
+      <canvas id="peak" width="120" height="480"></canvas>
     `;
   } 
   _receiveVolumeData(e) {
     if (this.animationInProgress) return;
+    this.receivedFirstDataMessage = true;
     this.animationInProgress = true;
-    const [left, right] = e.data.replace(/^\s*(\S+)\s+(\S+)\s*$/,'$1 $2').split(' ');
+    //eslint-disable-next-line max-len
+    const [m,s,i,left, right, leftPeak, rightPeak] = e.data.replace(/^\s*M:\s*(\S+)\s*S:\s*(\S+)\s*I:\s*(\S+)\s*P:\s*(\S+)\s+(\S+)\s*K:\s*(\S+)\s+(\S+)\s*$/,'$1 $2 $3 $4 $5 $6 $7').split(' ');
+    this.overallLoudness = parseFloat(i).toFixed(1);
+    this.leftPeak = parseFloat(leftPeak).toFixed(1);
+    this.rightPeak = parseFloat(rightPeak).toFixed(1);
     requestAnimationFrame(() => {
-      const leftVol = Math.min(2.0,parseFloat(left)); //limit to negative numbers
-      const rightVol = Math.min(2.0,parseFloat(right)); 
+      const leftVol = Math.min(2.0,parseFloat(left)); //limit to 2 dbFS max
+      const rightVol = Math.min(2.0,parseFloat(right));
+      
       const leftOffset = Math.max(0,Math.min(14 -  Math.round(7*leftVol),448)); //limit range of scal
       const rightOffset = Math.max(0,Math.min(14 -  Math.round(7*rightVol), 448));
-      this.leftPeak = Math.min(this.leftPeak, leftOffset); //record the peak
-      this.rightPeak = Math.min(this.rightPeak, rightOffset);
       this.leftAvg--; //assumes we come in here about 10th sec will drop 20db in 2 secs
       this.rightAvg--;
       this.leftAvg = Math.min(Math.max(this.leftAvg, leftVol),0.0); //assumes we come in here about 10th sec will drop 20db in 2 secs
@@ -219,25 +178,7 @@ class RecVolume extends LitElement {
       this.ctx.fillStyle = 'orange'; //then paint in the decaying average
       this.ctx.fillRect(25,leftAvgOffset,20,2);
       this.ctx.fillRect(85,rightAvgOffset,20,2);
-      this.ctx.lineWidth = 2;
-      this.ctx.strokeStyle = 'white';
-      this.ctx.beginPath();
-      this.ctx.moveTo(25,this.leftPeak + 21);
-      this.ctx.lineTo(45,this.leftPeak + 21);
-      this.ctx.moveTo(85,this.rightPeak + 21);
-      this.ctx.lineTo(105, this.rightPeak + 21);
-      this.ctx.stroke();
-  
-      //draw the peakes box at the top
-  
-      this.ctx.fillStyle = 'black';
-      this.ctx.fillRect(12,2,46,18);
-      this.ctx.fillRect(72,2,46,18);
-      this.ctx.textAlign = 'center';
-      this.ctx.font = '9px san-serif';
-      this.ctx.fillStyle = 'white';
-      this.ctx.fillText((2-(this.leftPeak/7)).toFixed(1) + ' db', 35, 11);
-      this.ctx.fillText((2-(this.rightPeak/7)).toFixed(1) + ' db', 95, 11);
+
       this.animationInProgress = false;
     });
 
@@ -250,6 +191,7 @@ class RecVolume extends LitElement {
 
   _startChannel() {
     this.running = true;
+    this.receivedFirstDataMessage = false;
     this.eventSrc = new EventSource(`/api/${this.channel}/volume`);
     this.eventSrc.addEventListener('message', this._receiveVolumeData);  
     this._reset();
