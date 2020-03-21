@@ -21,7 +21,7 @@ const path = require('path');
 const debug = require('debug')('recorder:record');
 const debugctl = require('debug')('recorder:control');
 const debugvol = require('debug')('recorder:volume');
-const fs = require('fs');
+const fs = require('fs').promises;
 const jwt = require('jwt-simple');
 const {spawn} = require('child_process');
 const rl = require('readline');
@@ -165,10 +165,16 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
             cwd: path.resolve(__dirname, '../'),
             stdio: ['pipe', 'ignore', 'pipe']
           });
+          const recordingStartTime = new Date().getTime();
           this._recording.stderr.pipe(this._sed.stdin, {end: false});
-          this._recordingPromise = new Promise(resolve => this._recording.once('exit', (code,signal) => {
+          this._recordingPromise = new Promise(resolve => this._recording.once('exit', async (code,signal) => {
             debug('recording for ', this.name, ' exited with code ', code, ' and signal ', signal);
             if (code !== 0 && code !== 255) logger('error', `recorder ${this.name} recording ended prematurely with code ${code}`);
+            const recordingEndTime = new Date().getTime();
+            const timeLimit = parseInt(process.env.RECORDER_TIME_LIMIT,10);
+            if ((recordingEndTime - recordingStartTime) < timeLimit) {
+              await fs.unlink(path.resolve(__dirname,'../', filename)); //delete the recording because it is too short
+            }
             delete this._recording;
             resolve();
           }));
