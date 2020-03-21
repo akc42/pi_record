@@ -146,21 +146,21 @@ class RecApp extends LitElement {
         }
         #case {
           border-radius: 20px;
-          padding: 40px;
+          padding: 20px;
           background-color: #380c27;
           background-image: url('/images/light-aluminium.png');
           background-repeat: repeat;
-          height: 600px;
+          height: 660px;
           width: 480px;
           display: grid;
-          grid-gap: 10px;
+          grid-gap: 5px;
           grid-template-areas:
             "logo led volume"
-            "switch switch volume"
             "button button volume"
+            "switch switch volume"
             "lcd lcd lcd";
-          grid-template-columns: 2fr 2fr 4fr;
-          grid-template-rows: 1fr 2fr 1fr 1fr;
+          grid-template-columns: 1fr 1fr 3fr;
+          grid-template-rows: 2fr 4fr 4fr 3fr;
 
         }
         rec-led {
@@ -200,6 +200,7 @@ class RecApp extends LitElement {
       <div id="case">
         <div id="icon"></div>
         <rec-led .colour=${this.colour} style="--led-size: 12px;"></rec-led>
+        <rec-record-button ?enabled=${this.taken} ?pushed=${this.recording} @record-change=${this._recordChange}></rec-record-button>  
         <rec-switch .choices=${this.availableChannels} .selected=${this.channel} @switch-change=${this._changeChannel}></rec-switch>
         <rec-lcd 
           .channel=${this.channelname}
@@ -209,7 +210,6 @@ class RecApp extends LitElement {
           .leftpeak=${this.leftpeak}
           .rightpeak=${this.rightpeak}
         ></rec-lcd>
-        <rec-record-button ?enabled=${this.taken} ?pushed=${this.recording} @record-change=${this._recordChange}></rec-record-button>  
         <rec-volume id="volume" .channel=${this.channel} @loudness-change=${this._newLoudness}></rec-volume>
       </div>
       <div class="feet">
