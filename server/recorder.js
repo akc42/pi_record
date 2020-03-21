@@ -157,7 +157,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
           this._volume.stdin.end('q');
           await this._volumePromise;
           const rightnow = new Date();
-          const basename = this.name.replace(/\s/g,'_') + '_' + rightnow.toISOString().replace(/\.|:/g,'-');
+          const basename = this.name.charAt(0) + '_' + rightnow.toISOString().substring(8,10).replace(/T|:/g,'');
           const filename = `${process.env.RECORDER_RECORDINGS}/${basename}.flac`;
           const args = recargs.replace('hw:dddd', 'hw:' + this._device).replace(/s32le/g,this._fmt).replace('recordings/out.flac',filename).split(' ');
           debug('starting recording command is ffmpeg ', args.join(' '));
