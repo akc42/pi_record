@@ -67,11 +67,9 @@ class RecLcd extends LitElement {
       if (changed.has('pixelSize') ) {
         this.firstUpdated();  //just creates a new screen and displays everything
       } else {
-        if (changed.has('channel')) this._displayContent('channel') ;
-        if (changed.has('state')) this._displayContent('state');
-        if (changed.has('filename')) this._displayContent('filename');
-        if (changed.has('loudness')) this._displayContent('loudness');
-        if (changed.has('leftpeak') || changed.has('rightpeak')) this._displayContent('peak');
+        if (changed.has('channel') || changed.has('state') || changed.has('filename') || 
+        changed.has('filename')  || changed.has('leftpeak') || changed.has('rightpeak')) this._displayContent() ;
+
       }
     }
     super.update(changed);
@@ -113,44 +111,22 @@ class RecLcd extends LitElement {
       <div id="screen" class="display"></div>
     `;
   }
-  _displayContent(field = 'All') {
-    const f = field;
+  _displayContent() {
     if (this.animationInProgress) return;
     this.animationInProgress = true;
     requestAnimationFrame(() => {
-      if (f === 'All') this.screen.clearScreen();
-      if (this._shouldDisplay(f, 'channel', RecLcd.CHANNEL_START, RecLcd.CHANNEL_LENGTH)) {
-        this.screen.writeString(this.channel.left(RecLcd.CHANNEL_LENGTH));
-      } 
-      if (this._shouldDisplay(f, 'state', RecLcd.STATE_START, RecLcd.STATE_LENGTH)) {
-        this.screen.writeString(this.state.left(RecLcd.STATE_LENGTH));
-      } 
-      if (this._shouldDisplay(f, 'filename', RecLcd.FILE_START, RecLcd.FILE_LENGTH)) {
-        this.screen.writeString(this.filename.left(RecLcd.FILE_LENGTH));
-      } 
-      if (this._shouldDisplay(f, 'loudness', RecLcd.LOUD_START, RecLcd.LOUD_LENGTH)) {
-        const loud = this.loudness.length > 0 ? `Loudness: ${this.loudness.left(5).padStart(5,' ')} LUFS`.left(RecLcd.LOUD_LENGTH) : '';
-        this.screen.writeString(loud);
-      } 
-      if (this._shouldDisplay(f, 'peak', RecLcd.PEAK_START, RecLcd.PEAK_LENGTH)) {
-        const peak = this.leftpeak.length > 0 || this.rightpeak.length > 0 ?
-          `Peak: ${this.leftpeak.left(5).padStart(5,' ')} ${this.rightpeak.left(5).padStart(5,' ')} dbFS`.left(RecLcd.PEAK_LENGTH) : '';
-        this.screen.writeString(peak);
-      } 
-
+      this.screen.clearScreen();
+      this.screen.writeString(this.channel.substr(0,RecLcd.CHANNEL_LENGTH),RecLcd.CHANNEL_START);
+      this.screen.writeString(this.state.substr(0,RecLcd.STATE_LENGTH),RecLcd.STATE_START);
+      const file = this.filename.length > 0 ? `File: ${this.filename}`.substr(0,RecLcd.FILE_LENGTH) : ''
+      this.screen.writeString(file,RecLcd.FILE_START);
+      const loud = this.loudness.length > 0 ? `Int Loud: ${this.loudness.substr(0,5).padStart(5,' ')} LUFS`.substr(0,RecLcd.LOUD_LENGTH) : '';
+      this.screen.writeString(loud, RecLcd.LOUD_START);
+      const peak = this.leftpeak.length > 0 || this.rightpeak.length > 0 ?
+        `Pk: ${this.leftpeak.substr(0,5).padStart(5,' ')} ${this.rightpeak.substr(0,5).padStart(5,' ')} dbFS`.substr(0,RecLcd.PEAK_LENGTH) : '';
+      this.screen.writeString(peak, RecLcd.PEAK_START);
       this.animationInProgress = false;
     });
   }
-  _shouldDisplay(field, screenfield, start, length) {
-    if (field === screenfield || field === 'All') {
-      if (field !== 'All') {
-        for (let i = 0; i < length; i++) {
-          this.screen.clearCharacter(start + i);
-        }
-      };
-      return true;
-    }
-    return false;
-  } 
 }
 customElements.define('rec-lcd', RecLcd);

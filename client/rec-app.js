@@ -35,22 +35,35 @@ class RecApp extends LitElement {
   static get properties() {
     return {
       channel : {type: String},
+      channelname: {type: String},
       availableChannels: {type: Array},
       colour: {type: String},
       taken: {type: Boolean},
       pushed: {type: Boolean},
-      messages: {type: Array}
+      state: {type: String},
+      filename: {type: String},
+      loudness: {type: String},
+      leftpeak: {type: String},
+      rightpeak: {type: String},
+      takeable: {type: Boolean}
     };
   }
   constructor() {
     super();
     this.subscribeid = Date.now();
     this.channel = '';
+    this.channelname = '';
     this.availableChannels = [];
     this.colour = 'led-red';  //initial state is blinking red
     this.taken = false;
     this.pushed = false;
-    this.messages = ['Welcome to Pi-Record'];
+    this.state = 'No Mic';
+    this.filename = ''
+    this.loudness = '';
+    this.leftpeak = '';
+    this.rightpeak = '';
+    this.microphones = {};
+    this.takeable = false;
     this._eventAdd = this._eventAdd.bind(this);
     this._eventClose = this._eventClose.bind(this);
     this._eventRelease = this._eventRelease.bind(this);
@@ -65,9 +78,16 @@ class RecApp extends LitElement {
     this.removeAttribute('unresolved');
     this.channel = '';
     this.availableChannels = [];
+    this.microphones = {};
     this.colour = 'led-red';  //initial state is blinking red
     this.taken = false;
     this.pushed = false;
+    this.state = 'No Mic';
+    this.filename = ''
+    this.loudness = '';
+    this.leftpeak = '';
+    this.rightpeak = '';
+    this.channelname = '';
     this.eventSrc = new EventSource(`/api/${this.subscribeid}/status`);
     this.eventSrc.addEventListener('add', this._eventAdd);
     this.eventSrc.addEventListener('close', this._eventClose);
@@ -87,7 +107,24 @@ class RecApp extends LitElement {
     this.eventSrc.removeEventListener('status', this._eventStatus);
     this.eventSrc.removeEventListener('take', this._eventTake);
   }
-
+  updated(changed) {
+    if (changed.has('channel')) {
+      if (this.channel.length > 0 && this.microphones[this.channel] !== undefined) {
+        if (this.microphones[this.channel].connected) { 
+          this.channelname = this.microphones[this.channel].name;
+        } else {
+          this.channelname = '';
+          this.channel = '';
+        }
+      } else {
+        this.channelname = '';
+      }
+    }
+    if (changed.has('takeable')  && this.takeable) {
+      this. _takeChannel();
+    }
+    super.updated(changed);
+  }
 
   render() {
     return html`
@@ -164,7 +201,14 @@ class RecApp extends LitElement {
         <div id="icon"></div>
         <rec-led .colour=${this.colour} style="--led-size: 12px;"></rec-led>
         <rec-switch .choices=${this.availableChannels} .selected=${this.channel} @switch-change=${this._changeChannel}></rec-switch>
-        <rec-lcd width="40" height="3" .content=${this.messages}></rec-lcd>
+        <rec-lcd 
+          .channel=${this.channelname}
+          .state=${this.state}
+          .filename=${this.filename}
+          .loudness=${this.loudness}
+          .leftpeak=${this.leftpeak}
+          .rightpeak=${this.rightpeak}
+        ></rec-lcd>
         <rec-record-button ?enabled=${this.taken} ?pushed=${this.recording} @record-change=${this._recordChange}></rec-record-button>  
         <rec-volume id="volume" .channel=${this.channel} @loudness-change=${this._newLoudness}></rec-volume>
       </div>
@@ -181,36 +225,40 @@ class RecApp extends LitElement {
     } catch(err) {
       console.warn('Error response to Api Request ', func , ' channel ', channel, ' token ', token, ':' , err);
       this.color = 'led-red'; //this is our external showing that all is not well.
+      this.state = 'Comms'
     }
     return false;
   }
   _changeChannel(e) {
     if (this.channel !== e.details) {
       const newChannel = e.details;
-      const result = this._callApi('release', this.channel, this.token);
-      if (result.state) {
+      const {state} = this._callApi('release', this.channel, this.token);
+      if (state) {
         this.token = ''
         this.taken = false
         this.keepRenewing = false;
       }
+      this.state = 'Monitor';
       this.colour = 'led-yellow';
-      const result2 = this._callApi('take', newChannel, this.subscribeid);
-      if (result2.state) {
+      const {result, token} = this._callApi('take', newChannel, this.subscribeid);
+      if (result) {
         this.taken = true;
         this.channel = newChannel;
-        this.token = result2.token;
+        this.token = token;
+        this.state = 'Control';
         this.colour = 'led-blue';
       }
     }
   }
   _eventAdd(e) {
     try {
-      const added = JSON.parse(e.data);
-      Object.assign(this.state[added.channel],{connected: true, taken: false, client: ''});
+      const {channel, name} = JSON.parse(e.data);
+      Object.assign(this.microphones[channel],{connected: true, taken: false, client: '', name: name});
       this._manageNewState();
     } catch (e) {
       console.warn('Error in parsing Event Add:', e);
       this.colour = 'led-red';
+      this.state = 'Err:Add';
     }
 
   }
@@ -218,70 +266,78 @@ class RecApp extends LitElement {
     //the server is closing down, so reset everything to wait for it to come up again
     this.pushed = false;
     this.taken = false;
-    this.state = {};
+    this.microphones = {};
     this.channel = '';
+    this.state = 'Closed'
     this.ticker.destroy();
   }
   _eventRelease(e) {
     try {
-      const released = JSON.parse(e.data);
-      Object.assign(this.state[released.channel], {taken:false, client: ''});
+      const {channel} = JSON.parse(e.data);
+      Object.assign(this.microphones[channel], {taken:false, client: ''});
       this._manageNewState();
     } catch (e) {
       console.warn('Error in parsing Event Release:', e);
       this.colour = 'led-red';
+      this.state = 'Err:Rel';
     }
   }
   _eventRemove(e) {
     try {
-      const removed = JSON.parse(e.data);
+      const {channel} = JSON.parse(e.data);
 
-      this.state[removed.channel] = {connected: false, taken: false, client: '', name: ''};
+      this.microphones[channel] = {connected: false, taken: false, client: '', name: ''};
       this._manageNewState();
     } catch (e) {
       console.warn('Error in parsing Event Remove:', e);
       this.colour = 'led-red';
+      this.state = 'Err:Rem';
     }
   }
   _eventStatus(e) {
     try {
-      this.state = JSON.parse(e.data);
+      this.microphones = JSON.parse(e.data);
       this._manageNewState();
     } catch (e) {
       console.warn('Error in parsing Event Status:', e);
       this.colour = 'led-red';
+      this.state = 'Err:Sts'
     }
   }
   _eventTake(e) {
     try {
-      const taken = JSON.parse(e.data);
-      Object.assign(this.state[taken.channel], {connected: true, taken: true, client: taken.client});
+      const {channel,client} = JSON.parse(e.data);
+      Object.assign(this.microphones[channel], {connected: true, taken: true, client: client});
       this._manageNewState();
     } catch (err) {
       console.warn('Error in parsing Event Remove:', err);
       this.colour = 'led-red';
+      this.state = 'Err:Tak'
     }
 
   }
-  async _manageNewState() {
+  _manageNewState() {
     this.availableChannels = [];
     let foundCurrentChannel = false;
-    for (let channel in this.state) {
+    let firstConnectedChannel = ''
+    for (let channel in this.microphones) {
       const currentChannel = (this.channel === channel);
-      const state = this.state[channel];
-      if (state.connected) {
+      const microphone = this.microphones[channel];
+      if (microphone.connected) {
+        if (firstConnectedChannel.length === 0) firstConnectedChannel = channel;
         if (currentChannel) foundCurrentChannel = true;
-        if (currentChannel && this.taken && !state.taken) {
+        if (currentChannel && this.taken && !microphone.taken) {
           //we've lost our taken status
-          this.taken = false;;
+          this.taken = false;
+          this.state = 'Monitor';
         }
-        if (!state.taken || (this.taken && currentChannel)) {
+        if (!microphone.taken || (this.taken && currentChannel)) {
           this.availableChannels.push(channel);
         }
       }
     } 
     if (!foundCurrentChannel) {
-      this.channel = '';  //ensure we don't think we have a channel
+      this.channel = '';
       this.taken = false; //or that we have it taken
     }
     if (this.availableChannels.length > 0) {
@@ -290,53 +346,68 @@ class RecApp extends LitElement {
         if (this.channel.length === 0) {
           this.channel = this.availableChannels[0];  //select the first one for now
         }
-        const resp = await this._callApi('take',this.channel, this.subscribeid);
-        if (resp.state) {
-          this.token = resp.token;
-          this.taken = true;
-          this.colour = 'led-blue';
-          this.ticker = new Ticker(4*60*100); //create a renew ticker
-          try {
-            this.keepRenewing = true;
-            while(this.keepRenewing) {
-              await this.ticker.nextTick;
-              const response2 = this._callApi('renew', this.channel, this.token)
-              if (!response2.state) {
-                //we didn't renew - so act as 
-                this.token = ''
-                this.taken = false; 
-                this.keepRenewing = false;
-              }                     
-            }
-          } catch(e) {
-            //someone closed the ticker
-          }
-        }
+        this._takeChannel();
       } 
     } else {
       this.colour = 'led-yellow';
+      if (!foundCurrentChannel && firstConnectedChannel.length > 0) {
+        this.channel = firstConnectedChannel;
+        this.state = 'Monitor'
+      }
     }
   }
   _newLoudness(e) {
-    this.messages = [
-      this.messages[0],
-      this.messages[1] !== undefined? this.messages[1] : '',
-      `Loud ${e.detail.integrated} LUFS  Peak ${e.detail.leftPeak} ${e.detail.rightPeak} dbFS`
-    ];
+    this.loudness = e.detail.integrated;
+    this.leftpeak = e.detail.leftPeak;
+    this.rightpeak = e.detail.rightPeak;
   }
   async _recordChange(e) {
     if (this.pushed !== e.detail  && this.taken) {
       const newPushState = e.detail;
       if (newPushState) {
-        const {state} = await this._callApi('start', this.channel, this.token);
-        if (state) this.pushed = true
+        const {state, name} = await this._callApi('start', this.channel, this.token);
+        if (state) {
+          this.pushed = true
+          this.filename = name;
+        }
       } else {
-        const {state} = await this._callApi('stop', this.channel, this.token);
-        if (state) this.pushed = false;
+        const {state, kept} = await this._callApi('stop', this.channel, this.token);
+        this.pushed = false;
+        if (!(state && kept)) this.filename = '';
       }
       
     }
     
+  }
+  _takeChannel() {
+    this._callApi('take',this.channel, this.subscribeid).then( async response => {
+      if (response.state) {
+        this.token = response.token;
+        this.taken = true;
+        this.colour = 'led-blue';
+        this.ticker = new Ticker(4*60*1000); //create a renew ticker for 4 minutes
+        this.state = 'Control';
+        try {
+          let keepRenewing = true;
+          while(keepRenewing) {
+            await this.ticker.nextTick;
+            const {state, token} = await this._callApi('renew', this.channel, this.token)
+            if (state) {
+              this.token = token;
+            } else {
+              this.token = '';
+              this.state = 'Monitor';
+              this.taken = false;
+              this.colour = 'led-yellow';
+              keepRenewing = false;
+            }
+          }
+        } catch(e) {
+          //someone closed the ticker
+        }
+      }
+    });
+
   }
   async _unload() {
     this.eventSrc.close();
