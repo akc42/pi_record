@@ -20,12 +20,15 @@
 
 
 
-import { LitElement, html, supportsAdoptingStyleSheets } from '../lit/lit-element.js';
+import { LitElement, html } from '../lit/lit-element.js';
 
 import './rec-volume.js';
 import './rec-led.js';
+import './rec-lcd.js';
 import './rec-record-button.js';
 import './rec-switch.js';
+
+import Ticker from './ticker.js';
 
 class RecApp extends LitElement {
 
@@ -35,7 +38,8 @@ class RecApp extends LitElement {
       availableChannels: {type: Array},
       colour: {type: String},
       taken: {type: Boolean},
-      pushed: {type: Boolean}
+      pushed: {type: Boolean},
+      messages: {type: Array}
     };
   }
   constructor() {
@@ -46,6 +50,7 @@ class RecApp extends LitElement {
     this.colour = 'led-red';  //initial state is blinking red
     this.taken = false;
     this.pushed = false;
+    this.messages = ['Welcome to Pi-Record'];
     this._eventAdd = this._eventAdd.bind(this);
     this._eventClose = this._eventClose.bind(this);
     this._eventRelease = this._eventRelease.bind(this);
@@ -57,6 +62,7 @@ class RecApp extends LitElement {
   }
   connectedCallback() {
     super.connectedCallback();
+    this.removeAttribute('unresolved');
     this.channel = '';
     this.availableChannels = [];
     this.colour = 'led-red';  //initial state is blinking red
@@ -107,17 +113,17 @@ class RecApp extends LitElement {
           background-color: #380c27;
           background-image: url('/images/light-aluminium.png');
           background-repeat: repeat;
-          height: 560px;
+          height: 600px;
           width: 480px;
           display: grid;
           grid-gap: 10px;
           grid-template-areas:
             "logo led volume"
             "switch switch volume"
-            ". . volume"
-            "button button volume";
-          grid-template-columns: 3fr 3fr 4fr;
-          grid-template-rows: 1fr 2fr 1fr 2fr;
+            "button button volume"
+            "lcd lcd lcd";
+          grid-template-columns: 2fr 2fr 4fr;
+          grid-template-rows: 1fr 2fr 1fr 1fr;
 
         }
         rec-led {
@@ -125,6 +131,9 @@ class RecApp extends LitElement {
         }
         rec-switch {
           grid-area: switch;
+        }
+        rec-lcd {
+          grid-area: lcd;
         }
         rec-record-button {
           grid-area: button;
@@ -155,8 +164,9 @@ class RecApp extends LitElement {
         <div id="icon"></div>
         <rec-led .colour=${this.colour} style="--led-size: 12px;"></rec-led>
         <rec-switch .choices=${this.availableChannels} .selected=${this.channel} @switch-change=${this._changeChannel}></rec-switch>
+        <rec-lcd width="40" height="3" .content=${this.messages}></rec-lcd>
         <rec-record-button ?enabled=${this.taken} ?pushed=${this.recording} @record-change=${this._recordChange}></rec-record-button>  
-        <rec-volume id="volume" .channel=${this.channel}></rec-volume>
+        <rec-volume id="volume" .channel=${this.channel} @loudness-change=${this._newLoudness}></rec-volume>
       </div>
       <div class="feet">
         <div id="left" class="foot"></div>
@@ -181,6 +191,7 @@ class RecApp extends LitElement {
       if (result.state) {
         this.token = ''
         this.taken = false
+        this.keepRenewing = false;
       }
       this.colour = 'led-yellow';
       const result2 = this._callApi('take', newChannel, this.subscribeid);
@@ -209,6 +220,7 @@ class RecApp extends LitElement {
     this.taken = false;
     this.state = {};
     this.channel = '';
+    this.ticker.destroy();
   }
   _eventRelease(e) {
     try {
@@ -245,8 +257,8 @@ class RecApp extends LitElement {
       const taken = JSON.parse(e.data);
       Object.assign(this.state[taken.channel], {connected: true, taken: true, client: taken.client});
       this._manageNewState();
-    } catch (e) {
-      console.warn('Error in parsing Event Remove:', e);
+    } catch (err) {
+      console.warn('Error in parsing Event Remove:', err);
       this.colour = 'led-red';
     }
 
@@ -283,11 +295,34 @@ class RecApp extends LitElement {
           this.token = resp.token;
           this.taken = true;
           this.colour = 'led-blue';
+          this.ticker = new Ticker(4*60*100); //create a renew ticker
+          try {
+            this.keepRenewing = true;
+            while(this.keepRenewing) {
+              await this.ticker.nextTick;
+              const response2 = this._callApi('renew', this.channel, this.token)
+              if (!response2.state) {
+                //we didn't renew - so act as 
+                this.token = ''
+                this.taken = false; 
+                this.keepRenewing = false;
+              }                     
+            }
+          } catch(e) {
+            //someone closed the ticker
+          }
         }
       } 
     } else {
       this.colour = 'led-yellow';
     }
+  }
+  _newLoudness(e) {
+    this.messages = [
+      this.messages[0],
+      this.messages[1] !== undefined? this.messages[1] : '',
+      `Loud ${e.detail.integrated} LUFS  Peak ${e.detail.leftPeak} ${e.detail.rightPeak} dbFS`
+    ];
   }
   async _recordChange(e) {
     if (this.pushed !== e.detail  && this.taken) {
