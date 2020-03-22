@@ -28,9 +28,9 @@ const rl = require('readline');
 const logger = require('./logger');
 
 //eslint-disable-next-line   max-len
-const volargs = '-hide_banner -nostats -f alsa -acodec pcm_s32le -ac:0 2 -ar 192000 -i hw:dddd -filter_complex ebur128=peak=true -f null -';
+const volargs = '-hide_banner -nostats -f alsa -acodec pcm_s32le -ac:0 2 -ar 192000 -i hw:dddd -filter_complex ebur128=peak=true:meter=18 -f null -';
 //eslint-disable-next-line   max-len
-const recargs = '-hide_banner -nostats -f alsa -acodec pcm_s32le -ac:0 2 -ar 192000 -i hw:dddd -filter_complex asplit=2[main][vols],[vols]ebur128=peak=true[vol] -map [main] -acodec flac recordings/out.flac -map [vol] -f null -';
+const recargs = '-hide_banner -nostats -f alsa -acodec pcm_s32le -ac:0 2 -ar 192000 -i hw:dddd -filter_complex asplit=2[main][vols],[vols]ebur128=peak=true:meter=18[vol] -map [main] -acodec flac recordings/out.flac -map [vol] -f null -';
 const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.*TPK:\\([^d]*\\).*$/\\1 P: \\2 K: \\3/p'];
 
   class Recorder {
@@ -210,7 +210,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
     renew(token) {
       debug('request to renew token for ', this.name);
       if (this._checkToken(token)) return {state: true, token: this._makeToken(this.client)};
-      debug('request to renew failed');
+      logger('rec', `recorder ${this.name} failed to renew, so control released`);
       return {state: false };
     }
     async stop(token) {

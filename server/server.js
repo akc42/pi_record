@@ -124,19 +124,22 @@
       router.get('/api/:channel/:token/renew', checkRecorder,(req,res) => {
         debug('renew request received');
         const previousToken = req.params.token
-        const {state, token} = req.recorder.renew(req.params.token);  
+        const result = req.recorder.renew(req.params.token);  
         res.statusCode = 200;
-        res.end(JSON.stringify({state: state, token: token}));
-        if (state) {
-          //replace token in subscriber list if its there
-          for (let [response, entry] of subscribedChannels.entries()) {
-            if (entry.token === previousToken) {
-              entry.token = token;
-              subscribedChannels.set(response,entry);
-              break;
+        res.end(JSON.stringify(result));
+        //replace token in subscriber list if its there
+        for (let [response, entry] of subscribedChannels.entries()) {
+          if (entry.token === previousToken) {
+            entry.token = result.state? result.token : '';
+            if (!result.state) {
+              entry.recorder = null;
+              endStatus('release', {channel:req.params.channel});
             }
-          }          
-        }
+            subscribedChannels.set(response,entry);
+            break;
+          }
+        }          
+        
       });
       router.get('/api/:channel/:token/release', checkRecorder, async (req,res) => {
         debug('release request received')
