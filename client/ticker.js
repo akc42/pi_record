@@ -21,14 +21,12 @@ export default class Ticker {
   static counter = 0;
   constructor(frequency) {
     this.counter = ++Ticker.counter;
-    console.log(new Date().toISOString().substring(11,19),' create Ticker ', this.counter);
     this.frequency = frequency;
     this.donePromise = new Promise((resolve,reject) => {
       this.resolver = resolve;
       this.rejector = reject;
     });
     this.interval = setInterval(() => {
-      console.log('Tick Occurs ', this.counter);
       this.resolver();
       this.donePromise = new Promise((resolve,reject) => {
         this.resolver = resolve;
@@ -37,11 +35,9 @@ export default class Ticker {
     }, frequency);
   }
   get nextTick() {
-    console.log('next Tick Requested ', this.counter);
     return this.donePromise;
   }
   destroy() {
-    console.log('destroy Ticker ', this.counter);
     clearInterval(this.interval);
     this.rejector('close');  //kicks off anyone waiting for this
   }
