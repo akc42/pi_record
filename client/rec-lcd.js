@@ -67,7 +67,7 @@ class RecLcd extends LitElement {
       if (changed.has('pixelSize') ) {
         this.firstUpdated();  //just creates a new screen and displays everything
       } else {
-        if (changed.has('channel') || changed.has('state') || changed.has('filename') || 
+        if (changed.has('channel') || changed.has('state') || changed.has('filename') || changed.has('loudness') ||
         changed.has('filename')  || changed.has('leftpeak') || changed.has('rightpeak')) this._displayContent() ;
 
       }
