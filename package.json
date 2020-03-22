@@ -14,6 +14,7 @@
     "@webcomponents/webcomponentsjs": "^2.4.2",
     "babel-plugin-module-resolver": "^4.0.0",
     "chalk": "^3.0.0",
+    "content-disposition": "^0.5.3",
     "debug": "^4.1.1",
     "dotenv": "^8.2.0",
     "etag": "^1.8.1",
