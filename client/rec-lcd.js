@@ -21,19 +21,23 @@ import { LitElement, html } from '../lit/lit-element.js';
 import { Screen } from './lcd/classes.js';
 
 class RecLcd extends LitElement {
-  static PIXEL = 2;
-  static COLUMNS = 20;
-  static ROWS = 4;
-  static CHANNEL_START = 0;
-  static CHANNEL_LENGTH = 12;
-  static STATE_START = 13;
-  static STATE_LENGTH = 7;
-  static FILE_START = 20;
-  static FILE_LENGTH = 20;
-  static LOUD_START = 40;
-  static LOUD_LENGTH = 20;
-  static PEAK_START = 60;
-  static PEAK_LENGTH = 20;
+  static get constants() {
+    return {
+      PIXEL: 2,
+      COLUMNS: 20,
+      ROWS: 4,
+      CHANNEL_START: 0,
+      CHANNEL_LENGTH: 12,
+      STATE_START: 13,
+      STATE_LENGTH: 7,
+      FILE_START: 20,
+      FILE_LENGTH: 20,
+      LOUD_START: 40,
+      LOUD_LENGTH: 20,
+      PEAK_START: 60,
+      PEAK_LENGTH: 20
+    };
+  }
   static get properties() {
     return {
       pixelSize: {type: Number},
@@ -47,7 +51,7 @@ class RecLcd extends LitElement {
   }
   constructor() {
     super();
-    this.pixelSize = RecLcd.PIXEL;
+    this.pixelSize = RecLcd.constants.PIXEL;
     this.channel = '';
     this.state = 'Off';
     this.filename = '';
@@ -77,8 +81,8 @@ class RecLcd extends LitElement {
   firstUpdated() {
     this.screen = new Screen({
       elem: this.shadowRoot.querySelector('#screen'),
-      rows: RecLcd.ROWS,
-      columns: RecLcd.COLUMNS,
+      rows: RecLcd.constants.ROWS,
+      columns: RecLcd.constants.COLUMNS,
       pixelSize: this.pixelSize,
       pixelColor: "#000"
     });
@@ -116,15 +120,15 @@ class RecLcd extends LitElement {
     this.animationInProgress = true;
     requestAnimationFrame(() => {
       this.screen.clearScreen();
-      this.screen.writeString(this.channel.substr(0,RecLcd.CHANNEL_LENGTH),RecLcd.CHANNEL_START);
-      this.screen.writeString(this.state.substr(0,RecLcd.STATE_LENGTH),RecLcd.STATE_START);
-      const file = this.filename.length > 0 ? `File: ${this.filename}`.substr(0,RecLcd.FILE_LENGTH) : ''
-      this.screen.writeString(file,RecLcd.FILE_START);
-      const loud = this.loudness.length > 0 ? `Int Loud: ${this.loudness.substr(0,5).padStart(5,' ')} LUFS`.substr(0,RecLcd.LOUD_LENGTH) : '';
-      this.screen.writeString(loud, RecLcd.LOUD_START);
+      this.screen.writeString(this.channel.substr(0,RecLcd.constants.CHANNEL_LENGTH),RecLcd.constants.CHANNEL_START);
+      this.screen.writeString(this.state.substr(0,RecLcd.constants.STATE_LENGTH),RecLcd.constants.STATE_START);
+      const file = this.filename.length > 0 ? `File: ${this.filename}`.substr(0,RecLcd.constants.FILE_LENGTH) : ''
+      this.screen.writeString(file,RecLcd.constants.FILE_START);
+      const loud = this.loudness.length > 0 ? `Int Loud: ${this.loudness.substr(0,5).padStart(5,' ')} LUFS`.substr(0,RecLcd.constants.LOUD_LENGTH) : '';
+      this.screen.writeString(loud, RecLcd.constants.LOUD_START);
       const peak = this.leftpeak.length > 0 || this.rightpeak.length > 0 ?
-        `Pk: ${this.leftpeak.substr(0,5).padStart(5,' ')} ${this.rightpeak.substr(0,5).padStart(5,' ')} dbFS`.substr(0,RecLcd.PEAK_LENGTH) : '';
-      this.screen.writeString(peak, RecLcd.PEAK_START);
+        `Pk: ${this.leftpeak.substr(0,5).padStart(5,' ')} ${this.rightpeak.substr(0,5).padStart(5,' ')} dbFS`.substr(0,RecLcd.constants.PEAK_LENGTH) : '';
+      this.screen.writeString(peak, RecLcd.constants.PEAK_START);
       this.animationInProgress = false;
     });
   }

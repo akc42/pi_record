@@ -17,10 +17,10 @@
     You should have received a copy of the GNU General Public License
     along with Recorder.  If not, see <http://www.gnu.org/licenses/>.
 */
+let counter = 0;
 export default class Ticker {
-  static counter = 0;
   constructor(frequency) {
-    this.counter = ++Ticker.counter;
+    this.counter = ++counter;
     this.frequency = frequency;
     this.donePromise = new Promise((resolve,reject) => {
       this.resolver = resolve;
