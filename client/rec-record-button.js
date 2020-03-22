@@ -21,10 +21,15 @@ import { LitElement, html } from '../lit/lit-element.js';
 
 import {classMap} from '../lit/class-map.js';
 import {cache} from '../lit/cache.js';
+import metal from './styles/metal.js';
 
 import './material-icon.js';
 
 class RecRecordButton extends LitElement {
+  static get styles() {
+    return [metal];
+  }
+
   static get properties() {
     return {
       enabled: {type: Boolean},
@@ -79,42 +84,11 @@ class RecRecordButton extends LitElement {
           height: 80px;
           width: 80px;
           margin:0;
-          position:absolute;
           border-radius:50%;
           border-width: 5px;
           border-style: solid;
           border-color: transparent;
-
-          background-image: -webkit-radial-gradient(  50%   0%,  8% 50%, hsla(0,0%,100%,.5) 0%, hsla(0,0%,100%,0) 100%),
-            -webkit-radial-gradient(  50% 100%, 12% 50%, hsla(0,0%,100%,.6) 0%, hsla(0,0%,100%,0) 100%),
-            -webkit-radial-gradient(   0%  50%, 50%  7%, hsla(0,0%,100%,.5) 0%, hsla(0,0%,100%,0) 100%),
-            -webkit-radial-gradient( 100%  50%, 50%  5%, hsla(0,0%,100%,.5) 0%, hsla(0,0%,100%,0) 100%),
-            
-            -webkit-repeating-radial-gradient( 50% 50%, 100% 100%, hsla(0,0%,  0%,0) 0%, hsla(0,0%,  0%,0)   3%, hsla(0,0%,  0%,.1) 3.5%),
-            -webkit-repeating-radial-gradient( 50% 50%, 100% 100%, hsla(0,0%,100%,0) 0%, hsla(0,0%,100%,0)   6%, hsla(0,0%,100%,.1) 7.5%),
-            -webkit-repeating-radial-gradient( 50% 50%, 100% 100%, hsla(0,0%,100%,0) 0%, hsla(0,0%,100%,0) 1.2%, hsla(0,0%,100%,.2) 2.2%),
-            
-            -webkit-radial-gradient( 50% 50%, 200% 50%, hsla(0,0%,90%,1) 5%, hsla(0,0%,85%,1) 30%, hsla(0,0%,60%,1) 100%);
-
         }
-        .outer::before, .outer::after {
-          content: "";
-          top: 0;
-          left: 0;
-          position: absolute;
-          width: inherit;
-          height: inherit;
-          border-radius: inherit;
-          
-          /* fake conical gradients */
-          background-image: -webkit-radial-gradient(  50%   0%, 10% 50%, hsla(0,0%,0%,.1) 0%, hsla(0,0%,0%,0) 100%),
-            -webkit-radial-gradient(  50% 100%, 10% 50%, hsla(0,0%,0%,.1) 0%, hsla(0,0%,0%,0) 100%),
-            -webkit-radial-gradient(   0%  50%, 50% 10%, hsla(0,0%,0%,.1) 0%, hsla(0,0%,0%,0) 100%),
-            -webkit-radial-gradient( 100%  50%, 50% 06%, hsla(0,0%,0%,.1) 0%, hsla(0,0%,0%,0) 100%);
-        }
-        .outer:before { transform: rotate( 65deg); }
-        .outer:after { transform: rotate(-65deg); }
-
         .outer.enabled {
           border-color: #24E0FF;
         }
@@ -179,7 +153,7 @@ class RecRecordButton extends LitElement {
             to { background-color: #F00; }
         }
       </style>
-      <div class="outer ${classMap({enabled: this.enabled})}" @click=${this._toggle}>
+      <div class="outer ${classMap({enabled: this.enabled})}" @click=${this._toggle} metal>
         ${cache(this.pushed? html`
           <div class="inner running"><material-icon style="--icon-size:40px">pause_circle_outline</material-icon></div>
         `: html`
@@ -190,7 +164,11 @@ class RecRecordButton extends LitElement {
     `;
   }
   _toggle() {
-    this.pushed = !this.pushed;
+    if (this.enabled) {
+      this.pushed = !this.pushed;   //only do it if enabled
+    } else {
+      this.pushed = false;  //force the button to be off
+    }
   }
 }
 customElements.define('rec-record-button', RecRecordButton);
