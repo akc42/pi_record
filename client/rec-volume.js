@@ -24,7 +24,6 @@ class RecVolume extends LitElement {
   static get properties() {
     return {
       channel: {type: String},  //requested channel
-      running: {type: Boolean},
       overallLoudness: {type:String},
       leftPeak: {type: String},
       rightPeak: {type: String}
@@ -38,10 +37,10 @@ class RecVolume extends LitElement {
     this.animationInProgress = true;
   }
   updated(changed) {
-    if (changed.has('channel') && this.ctx !== undefined && changed.get('channel') !== undefined) {
+    if (changed.has('channel') && this.ctxPk !== undefined && changed.get('channel') !== undefined) {
       //we are not in the start up phase
-      if (this.channel.length > 0 && !this.running) this._startChannel(); 
-      else if (this.channel.length === 0 && this.running) this._stopChannel();     
+      if (changed.get('channel').length > 0) this._stopChannel(); //there was one running so stop it
+      if (this.channel.length > 0 ) this._startChannel(); 
     }
     if (this.receivedFirstDataMessage) {
       if (changed.has('overallLoudness') || changed.has('leftPeak') || changed.has('rightPeak')) {
@@ -59,66 +58,107 @@ class RecVolume extends LitElement {
     super.updated(changed);
   }
   firstUpdated() {
-    this.canvas = this.shadowRoot.querySelector('#peak');    
-    this.ctx = this.canvas.getContext('2d');
-    this.grad = this.ctx.createLinearGradient(0,0,0,448);
-    this.grad.addColorStop(0,'red');
-    this.grad.addColorStop(0.03125, 'red');
-    this.grad.addColorStop(0.125,'yellow');
-    this.grad.addColorStop(0.21875, 'limegreen');
-    this.grad.addColorStop(1, 'green');
+    this.dbFS = this.shadowRoot.querySelector('#peak');
+    this.luFS = this.shadowRoot.querySelector('#loud');    
+    this.ctxPk = this.dbFS.getContext('2d');
+    this.ctxLu = this.luFS.getContext('2d');
+    this.gradPk = this.ctxPk.createLinearGradient(0,0,0,448);
+    this.gradPk.addColorStop(0,'red');
+    this.gradPk.addColorStop(0.03125, 'red');
+    this.gradPk.addColorStop(0.125,'yellow');
+    this.gradPk.addColorStop(0.21875, 'limegreen');
+    this.gradPk.addColorStop(1, 'green');
+    this.gradLu = this.ctxLu.createLinearGradient(0,0,0,448);
+    this.gradLu.addColorStop(0,'red');
+    this.gradLu.addColorStop(0.1718,'orange');
+    this.gradLu.addColorStop(0.1719, 'gold');
+    this.gradLu.addColorStop(0.3906, 'yellow');
+    this.gradLu.addColorStop(0.390650,'limegreen');
+    this.gradLu.addColorStop(1.0, 'green')
+
     requestAnimationFrame(() => {
       //fill canvas with grey background
-      this.ctx.fillStyle = '#a0a0a0';
-      this.ctx.fillRect(0,0,this.canvas.width, this.canvas.height);
-      //now make a scale each side of the canvas
-      this.ctx.textAlign = 'centre';
-      this.ctx.textBaseline = 'middle'
-      this.ctx.fillStyle = 'white';
-      this.ctx.strokeStyle = 'white';
+      this.ctxPk.fillStyle = '#a0a0a0';
+      this.ctxPk.fillRect(0,0,this.dbFS.width, this.dbFS.height);
+      this.ctxLu.fillStyle = '#a0a0a0';
+      this.ctxLu.fillRect(0,0,this.luFS.width, this.luFS.height);
+
+      //now make a scale between the bars of peak and the right hand side of loud
+      this.ctxPk.textAlign = 'center';
+      this.ctxPk.textBaseline = 'middle'
+      this.ctxPk.fillStyle = 'white';
+      this.ctxPk.strokeStyle = 'white';
+      this.ctxLu.textAlign = 'left';
+      this.ctxLu.textBaseline = 'middle';
+      this.ctxLu.fillStyle = 'white';
+      this.ctxLu.strokeStyle = 'white';
       for(let i = 0; i <= 30; i++ ) {
         if ( i % 3 === 0) {
-          this.ctx.lineWidth = 2;
-          this.ctx.beginPath();
-          this.ctx.moveTo(19, 36 + (i * 7));
-          this.ctx.lineTo(24, 36 + (i * 7));
-          this.ctx.moveTo(79, 36 + (i * 7));
-          this.ctx.lineTo(84, 36 + (i * 7));
-          this.ctx.stroke();
-          this.ctx.fillText(i.toString(), 18, 36 + (i * 7));
-          this.ctx.fillText(i.toString(), 78, 36 + (i * 7));
+          this.ctxPk.lineWidth = 2;
+          this.ctxPk.beginPath();
+          this.ctxPk.moveTo(37, 30 + (i * 7));
+          this.ctxPk.lineTo(42, 30 + (i * 7));
+          this.ctxPk.moveTo(62, 30 + (i * 7));
+          this.ctxPk.lineTo(67, 30 + (i * 7));
+          this.ctxPk.stroke();
+          this.ctxPk.fillText(i.toString(), 53, 30 + (i * 7));
+          this.ctxLu.lineWidth = 2;
+          this.ctxLu.beginPath();
+          this.ctxLu.moveTo(this.luFS.width - 41, 30 + (i * 7));
+          this.ctxLu.lineTo(this.luFS.width - 36, 30 + (i * 7));
+          this.ctxLu.stroke();
+          this.ctxLu.fillText(i.toString(), this.luFS.width - 32, 30 + (i * 7));
+
         } else {
-          this.ctx.lineWidth = 1;
-          this.ctx.beginPath();
-          this.ctx.moveTo(20, 36 + (i * 7));
-          this.ctx.lineTo(24, 36 + (i * 7));
-          this.ctx.moveTo(80, 36 + (i * 7));
-          this.ctx.lineTo(84, 36 + (i * 7));
-          this.ctx.stroke();
+          this.ctxPk.lineWidth = 1;
+          this.ctxPk.beginPath();
+          this.ctxPk.moveTo(37, 30 + (i * 7));
+          this.ctxPk.lineTo(41, 30 + (i * 7));
+          this.ctxPk.moveTo(63, 30 + (i * 7));
+          this.ctxPk.lineTo(67, 30 + (i * 7));
+          this.ctxPk.stroke();
+          this.ctxLu.lineWidth = 1;
+          this.ctxLu.beginPath();
+          this.ctxLu.moveTo(this.luFS.width - 41, 30 + (i * 7));
+          this.ctxLu.lineTo(this.luFS.width - 37, 30 + (i * 7));
+          this.ctxLu.stroke();
 
         }
       }
       for(let i = 31; i <= 60; i++ ) {
         if ( i % 5 === 0) {
-          this.ctx.lineWidth = 2;
-          this.ctx.beginPath();
-          this.ctx.moveTo(19, 36 + (i * 7));
-          this.ctx.lineTo(24, 36 + (i * 7));
-          this.ctx.moveTo(79, 36 + (i * 7));
-          this.ctx.lineTo(84, 36 + (i * 7));
-          this.ctx.stroke();
-          this.ctx.fillText(i.toString(), 18, 36 + (i * 7));
-          this.ctx.fillText(i.toString(), 78, 36 + (i * 7));
+          this.ctxPk.lineWidth = 2;
+          this.ctxPk.beginPath();
+          this.ctxPk.moveTo(37, 30 + (i * 7));
+          this.ctxPk.lineTo(42, 30 + (i * 7));
+          this.ctxPk.moveTo(62, 30 + (i * 7));
+          this.ctxPk.lineTo(67, 30 + (i * 7));
+          this.ctxPk.stroke();
+          this.ctxPk.fillText(i.toString(), 53, 30 + (i * 7));
+          this.ctxLu.lineWidth = 2;
+          this.ctxLu.beginPath();
+          this.ctxLu.moveTo(this.luFS.width - 41, 30 + (i * 7));
+          this.ctxLu.lineTo(this.luFS.width - 36, 30 + (i * 7));
+          this.ctxLu.stroke();
+          this.ctxLu.fillText(i.toString(), this.luFS.width - 32, 30 + (i * 7));
+
         } else {
-          this.ctx.lineWidth = 1;
-          this.ctx.beginPath();
-          this.ctx.moveTo(20, 36 + (i * 7));
-          this.ctx.lineTo(24, 36 + (i * 7));
-          this.ctx.moveTo(80, 36 + (i * 7));
-          this.ctx.lineTo(84, 36 + (i * 7));
-          this.ctx.stroke();
+          this.ctxPk.lineWidth = 1;
+          this.ctxPk.beginPath();
+          this.ctxPk.moveTo(37, 30 + (i * 7));
+          this.ctxPk.lineTo(41, 30 + (i * 7));
+          this.ctxPk.moveTo(63, 30 + (i * 7));
+          this.ctxPk.lineTo(67, 30 + (i * 7));
+          this.ctxPk.stroke();
+          this.ctxLu.lineWidth = 1;
+          this.ctxLu.beginPath();
+          this.ctxLu.moveTo(this.luFS.width - 41, 30 + (i * 7));
+          this.ctxLu.lineTo(this.luFS.width - 37, 30 + (i * 7));
+          this.ctxLu.stroke();
         }
       }
+      this.ctxLu.fillStyle = this.gradLu;
+      this.ctxLu.fillRect(16,16,this.luFS.width - 60, this.luFS.height - 32);
       this.animationInProgress = false;
     });
   }
@@ -142,8 +182,8 @@ class RecVolume extends LitElement {
         }
 
       </style>
-      <canvas id="loud" width="120" height="480"></canvas>
-      <canvas id="peak" width="120" height="480"></canvas>
+      <canvas id="loud" width="150" height="480"></canvas>
+      <canvas id="peak" width="104" height="480"></canvas>
     `;
   } 
   _receiveVolumeData(e) {
@@ -161,43 +201,51 @@ class RecVolume extends LitElement {
       
       const leftOffset = Math.max(0,Math.min(14 -  Math.round(7*leftVol),448)); //limit range of scal
       const rightOffset = Math.max(0,Math.min(14 -  Math.round(7*rightVol), 448));
-      this.leftAvg--; //assumes we come in here about 10th sec will drop 20db in 2 secs
-      this.rightAvg--;
-      this.leftAvg = Math.min(Math.max(this.leftAvg, leftVol),0.0); //assumes we come in here about 10th sec will drop 20db in 2 secs
-      this.rightAvg = Math.min(Math.max(this.rightAvg, rightVol),0.0);
-      const leftAvgOffset = Math.max(22,Math.min(36 -  Math.round(7*this.leftAvg),468)); 
-      const rightAvgOffset = Math.max(22,Math.min(36 -  Math.round(7*this.rightAvg), 468));
   
-  
-      this.ctx.fillStyle = this.grad; //gradient
-      this.ctx.fillRect(25,22,20,448);
-      this.ctx.fillRect(85,22,20,448);
-      this.ctx.fillStyle = 'black'; //then blacken above it where no volume
-      this.ctx.fillRect(25,22,20, leftOffset);
-      this.ctx.fillRect(85,22,20, rightOffset);
-      this.ctx.fillStyle = 'orange'; //then paint in the decaying average
-      this.ctx.fillRect(25,leftAvgOffset,20,2);
-      this.ctx.fillRect(85,rightAvgOffset,20,2);
+      this.ctxPk.fillStyle = this.gradPk; //gradient
+      this.ctxPk.fillRect(16,16,18,448);
+      this.ctxPk.fillRect(69,16,18,448);
+      this.ctxPk.fillStyle = 'black'; //then blacken above it where no volume
+      this.ctxPk.fillRect(16,16,18, leftOffset);
+      this.ctxPk.fillRect(69,16,18, rightOffset);
+      const img = this.ctxLu.getImageData(17,16, this.luFS.width - 60, this.luFS.height - 32);
+      this.ctxLu.putImageData(img, 16,16);
+      this.ctxLu.fillStyle = this.gradLu;
+      this.ctxLu.fillRect(this.luFS.width - 44,16,1,448);  //add graident back to the missing pixel column
 
+      const mValue = Math.min(2.0,parseFloat(m));
+      const sValue = Math.min(2.0, parseFloat(s));
+      const mOffset = Math.max(17,Math.min(464, 31 - Math.round(7*mValue)));
+      const sOffset = Math.max(17,Math.min(464, 31 - Math.round(7*sValue)));
+      this.ctxLu.strokeStyle = 'cyan';
+      this.ctxLu.beginPath()
+      this.ctxLu.moveTo(this.luFS.width - 45, this.sOffset);
+      this.ctxLu.lineTo(this.luFS.width - 44, sOffset);
+      this.ctxLu.stroke();
+      this.sOffset = sOffset;
+
+      this.ctxLu.strokeStyle = 'black';
+      this.ctxLu.beginPath()
+      this.ctxLu.moveTo(this.luFS.width - 45, this.mOffset);
+      this.ctxLu.lineTo(this.luFS.width - 44, mOffset);
+      this.ctxLu.stroke();
+      this.mOffset = mOffset;
       this.animationInProgress = false;
     });
 
     
   }
   _reset() {
-    this.rightPeak = this.leftPeak = 448;
-    this.rightAvg = this.leftAvg = -62;
+    this.sOffset = this.mOffset = 464;
   }
 
   _startChannel() {
-    this.running = true;
     this.receivedFirstDataMessage = false;
     this.eventSrc = new EventSource(`/api/${this.channel}/volume`);
     this.eventSrc.addEventListener('message', this._receiveVolumeData);  
     this._reset();
   }
   _stopChannel() {
-    this.running = false;
     this.eventSrc.close();
     this.eventSrc.removeEventListener('message', this._receiveVolumeData);
   }
