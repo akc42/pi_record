@@ -39,7 +39,7 @@
   const url = require('url');
   const etag = require('etag');
   const logger = require('./logger');
-
+  const contentDisposition = require('content-disposition');
 
 
 
@@ -47,21 +47,24 @@
 
 
   const mimes = {
-    '.ico': 'image/x-icon',
-    '.html': 'text/html',
-    '.js': 'text/javascript',
-    '.mjs': 'text/javascript',
-    '.json': 'application/json',
+    '.crt':'application/x-x509-ca-cert',
     '.css': 'text/css',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.wav': 'audio/wav',
-    '.mp3': 'audio/mpeg',
-    '.svg': 'image/svg+xml',
-    '.pdf': 'application/pdf',
     '.doc': 'application/msword',
+    '.html': 'text/html',
+    '.ico': 'image/x-icon',
+    '.jpg': 'image/jpeg',
+    '.js': 'text/javascript',
+    '.json': 'application/json',
+    '.mjs': 'text/javascript',
+    '.mp3': 'audio/mpeg',
     '.m3u8': 'application/vnd.apple.mpegurl',
-    '.ts': 'video/mp2t'
+    '.pdf': 'application/pdf',
+    '.pem':'application/x-x509-ca-cert',
+    '.png': 'image/png',
+    '.svg': 'image/svg+xml',
+    '.ts': 'video/mp2t',
+    '.wav': 'audio/wav'
+
   };
   let server;
   const recorders = {};
@@ -133,7 +136,7 @@
             entry.token = result.state? result.token : '';
             if (!result.state) {
               entry.recorder = null;
-              endStatus('release', {channel:req.params.channel});
+              sendStatus('release', {channel:req.params.channel});
             }
             subscribedChannels.set(response,entry);
             break;
@@ -301,9 +304,10 @@
     //helper for static files
     const clientPath = (
       req.url.indexOf('node_modules') < 0 &&
-      req.url.indexOf('lit') < 0 
-      )? '../client/' : '../';
-    let playlist = false;
+      req.url.indexOf('lit') < 0 &&
+      req.url.indexOf('assets') < 0
+      )? '../client/' : (req.url.indexOf('assets') < 0? '../' : './');
+     debugfile('client path is ', clientPath);
     //find out where file is
     if (req.url.slice(-1) === '/') req.url += 'index.html';
     let match = '';
@@ -341,10 +345,16 @@
       req.url.charAt(0) === '/' ? req.url.substring(1) : req.url
     );
     debugfile('sending file ', filename)
+    const headers =     { 
+      'content-type': mimes[path.extname(filename)] || 'text/plain',
+      'cache-control': 'no-cache' 
+    }
+    if (path.extname(filename)  === '.pem') {
+      headers['Content-Disposition'] =  contentDisposition(filename)
+    }
     res.stream.respondWithFile(
       filename,
-      { 'content-type': mimes[path.extname(filename)] || 'text/plain',
-        'cache-control': 'no-cache' },
+      headers,
       { statCheck, onError });
 
   }
