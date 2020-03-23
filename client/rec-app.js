@@ -27,7 +27,7 @@ import './rec-volume.js';
 import './rec-led.js';
 import './rec-lcd.js';
 import './rec-record-button.js';
-import './rec-switch.js';
+import './round-switch.js';
 
 import Ticker from './ticker.js';
 
@@ -45,7 +45,9 @@ class RecApp extends LitElement {
       filename: {type: String},
       loudness: {type: String},
       leftpeak: {type: String},
-      rightpeak: {type: String}
+      rightpeak: {type: String},
+      modes: {type: Array},
+      mics: {type: Array},
     };
   }
   constructor() {
@@ -63,6 +65,10 @@ class RecApp extends LitElement {
     this.leftpeak = '';
     this.rightpeak = '';
     this.microphones = {};
+    this.modes = ['Monitor', 'Control'];
+    this.mode = 'Control';
+    this.mics = [];
+    this.mic = '';
     this._eventAdd = this._eventAdd.bind(this);
     this._eventClose = this._eventClose.bind(this);
     this._eventRelease = this._eventRelease.bind(this);
@@ -154,7 +160,7 @@ class RecApp extends LitElement {
           grid-template-areas:
             "logo led volume"
             "button button volume"
-            "switch switch volume"
+            "mode mic volume"
             "lcd lcd lcd";
           grid-template-columns: 4fr 4fr 7fr;
           grid-template-rows: 2fr 4fr 4fr 3fr;
@@ -174,6 +180,12 @@ class RecApp extends LitElement {
         }
         rec-volume {
           grid-area: volume;
+        }
+        #mode {
+          grid-area:mode;
+        }
+        #mic {
+          grid-area: mic;
         }
         .feet {
           padding: 0 50px;
@@ -198,7 +210,8 @@ class RecApp extends LitElement {
         <div id="icon" @click=${this._downloadCert}></div>
         <rec-led .colour=${this.colour} style="--led-size: 12px;"></rec-led>
         <rec-record-button ?enabled=${this.taken} ?pushed=${this.recording} @record-change=${this._recordChange}></rec-record-button>  
-<!--        <rec-switch .choices=${this.availableChannels} .selected=${this.channel} @switch-change=${this._changeChannel}></rec-switch> -->
+        <round-switch id="mode" .choices=${this.modes} .selection=${this.mode} @selection-change=${this._modeChange}></round-switch>
+        <round-switch id="mic" .choices=${this.mics} .selection=${this.mic} @selection-change=${this._micChange}></round-switch>
         <rec-lcd 
           .channel=${this.channelname}
           .state=${this.state}
