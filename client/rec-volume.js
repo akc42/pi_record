@@ -18,9 +18,12 @@
     along with Recorder.  If not, see <http://www.gnu.org/licenses/>.
 */
 import { LitElement, html } from '../lit/lit-element.js';
+import label from './styles/label.js';
 
 class RecVolume extends LitElement {
-
+  static get styles() {
+    return [label];
+  }
   static get properties() {
     return {
       channel: {type: String},  //requested channel
@@ -174,6 +177,11 @@ class RecVolume extends LitElement {
           justify-content: space-between;
           flex-direction: row;
         }
+        .container {
+          display: flex;
+          flex-direction: column;
+          align-items:center;
+        }
 
         canvas {
           -webkit-box-shadow: 0px 0px 5px 5px #000000; 
@@ -182,8 +190,14 @@ class RecVolume extends LitElement {
         }
 
       </style>
-      <canvas id="loud" width="150" height="480"></canvas>
-      <canvas id="peak" width="104" height="480"></canvas>
+      <div class="container">
+        <canvas id="loud" width="150" height="480"></canvas>
+        <div label>luFS</div>
+      </div>
+      <div class="container">
+        <canvas id="peak" width="104" height="480"></canvas>
+        <div label>dbFS</div>
+      </div>
     `;
   } 
   _receiveVolumeData(e) {

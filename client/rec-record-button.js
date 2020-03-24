@@ -22,12 +22,13 @@ import { LitElement, html } from '../lit/lit-element.js';
 import {classMap} from '../lit/class-map.js';
 import {cache} from '../lit/cache.js';
 import metal from './styles/metal.js';
+import label from './styles/label.js';
 
 import './material-icon.js';
 
 class RecRecordButton extends LitElement {
   static get styles() {
-    return [metal];
+    return [metal, label];
   }
 
   static get properties() {
@@ -106,15 +107,6 @@ class RecRecordButton extends LitElement {
           box-shadow: rgba(0, 0, 0, 0.2) 0 -1px 13px 1px, inset #304701 0 -1px 16px, #89FF00 0 2px 20px;
         }
 
-        .label {
-          color: white;
-          font-size: 14pt;
-          margin:5px;
-          padding:0;
-          font-variant: small-caps;
-          bottom: 10px;
-          position: absolute;
-        }
         .inner.running {
 
           background-color: #F00;
@@ -152,6 +144,11 @@ class RecRecordButton extends LitElement {
             50% { background-color: #A00; box-shadow: rgba(0, 0, 0, 0.2) 0 -1px 13px 1px, inset #441313 0 -1px 16px, rgba(255, 0, 0, 0.5) 0 2px 20px;}
             to { background-color: #F00; }
         }
+
+        [label] {
+          height: 25px;
+        }
+
       </style>
       <div class="outer ${classMap({enabled: this.enabled})}" @click=${this._toggle} metal>
         ${cache(this.pushed? html`
@@ -160,7 +157,7 @@ class RecRecordButton extends LitElement {
           <div class="inner stopped ${classMap({enabled: this.enabled})}"><material-icon style="--icon-size:40px">play_circle_outline</material-icon></div>
         `)}
       </div>
-      ${this.enabled? cache(this.pushed? html`<div class="label">Recording</div>`: html`<div class="label">Click to Record</div>`): ''}
+      ${this.enabled? cache(this.pushed? html`<div label>Recording</div>`: html`<div label>Click to Record</div>`): html`<div label></div>`}
     `;
   }
   _toggle() {
