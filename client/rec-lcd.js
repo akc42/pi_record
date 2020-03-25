@@ -46,7 +46,8 @@ class RecLcd extends LitElement {
       filename: {type: String},
       loudness: {type: String},
       leftpeak: {type: String},
-      rightpeak: {type: String}
+      rightpeak: {type: String},
+      alt: {type: Boolean}
     };
   }
   constructor() {
@@ -58,6 +59,7 @@ class RecLcd extends LitElement {
     this.loudness = '';
     this.leftpeak = '';
     this.rightpeak = '';
+    this.alt = false;
     this.animationInProgress = true; //prevents any early display
   }
   connectedCallback() {
@@ -122,7 +124,7 @@ class RecLcd extends LitElement {
       this.screen.clearScreen();
       this.screen.writeString(this.channel.substr(0,RecLcd.constants.CHANNEL_LENGTH),RecLcd.constants.CHANNEL_START);
       this.screen.writeString(this.state.substr(0,RecLcd.constants.STATE_LENGTH),RecLcd.constants.STATE_START);
-      const file = this.filename.length > 0 ? `File: ${this.filename}`.substr(0,RecLcd.constants.FILE_LENGTH) : ''
+      const file = this.filename.length > 0 ? `${this.alt? 'Alt Mic': 'File'}: ${this.filename}`.substr(0,RecLcd.constants.FILE_LENGTH) : ''
       this.screen.writeString(file,RecLcd.constants.FILE_START);
       const loud = this.loudness.length > 0 ? `Int Loud: ${this.loudness.substr(0,5).padStart(5,' ')} LUFS`.substr(0,RecLcd.constants.LOUD_LENGTH) : '';
       this.screen.writeString(loud, RecLcd.constants.LOUD_START);

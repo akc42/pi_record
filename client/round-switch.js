@@ -31,26 +31,23 @@ class RoundSwitch extends LitElement {
     return {
       choices: {type: Array},
       selected: {type:String},
-      title: {type: String}
+      title: {type: String},
+      locked: {type: Boolean}
     };
   }
   constructor() {
     super();
     this.choices = [];
     this.selected = '';
-  }
-  connectedCallback() {
-    super.connectedCallback();
-  }
-  disconnectedCallback() {
-    super.disconnectedCallback();
+    this.title = '';
+    this.locked = false;
   }
   update(changed) {
     if (changed.has('selected') && this.selected.length > 0) {
       this.dispatchEvent(new CustomEvent('selection-change', {
         bubbles: true,
         cancel: true,
-        details: this.selected
+        detail: this.selected
       }));
     }
     super.update(changed);
@@ -59,7 +56,9 @@ class RoundSwitch extends LitElement {
   render() {
     const base = this.choices.length > 1 ? -45 : 0 ;
     const stepSize = this.choices.length > 2 ? 45 : 90;
-    const selectedIndex = this.choices.indexOf(this.selected);
+    const clickSize = this.choices.length >2 ? 33 : 50 ;
+    const selected = this.selected.toLowerCase();
+    let selectedIndex = this.choices.findIndex(choice => choice.toLowerCase() === selected);
     const rotate = selectedIndex > 0 ? base + (stepSize * selectedIndex) : base ;
     return html`
       <style>
@@ -118,10 +117,26 @@ class RoundSwitch extends LitElement {
           background: black;
           
         }
+        .clickable {
+          position:absolute;
+          height:40px;
+          top: -10px;
+          background: transparent;
+        }
+        .clickable:hover {
+          background:black;
+          opacity:0.1;
+        }
       </style>
 
 
         <div id="knob" metal>
+          ${guard(this.choices, () => this.choices.map((choice, index) => html`
+            <div 
+              data-choice=${choice} 
+              class="clickable" 
+              style=${styleMap({left: `${index * clickSize}%`, width: `${clickSize}%`})} 
+              @click=${this._selectChoice}></div>`))} 
           <div id="spot" style=${styleMap({transform: `rotate(${rotate}deg) translateY(-22px)`})}></div>
           ${guard(this.choices, () => this.choices.map((choice, index) => html`
             <div class="tick" style=${styleMap({transform: `rotate(${base + stepSize * index}deg) translateY(-36px)`})}></div>
@@ -137,7 +152,7 @@ class RoundSwitch extends LitElement {
     `;
   }
   _selectChoice(e) {
-    this.selected = e.currentTarget.dataset.choice;
+    if (!this.locked) this.selected = e.currentTarget.dataset.choice;
   }
 }
 customElements.define('round-switch', RoundSwitch);

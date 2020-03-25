@@ -53,7 +53,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
         terminal: false
       });
       this._sedreader.on('line', line => {
-        if (this._volumeMessageCounter % 100 === 0) debugvol('sending subscribers 100th message ', line);
+        if (this._volumeMessageCounter % 100 === 0) debugvol('sending to ',this._subscribers.length,' subscribers ',this.name,' 100th message ', line);
         this._volumeMessageCounter++;
         for (let response of this._subscribers) {
           response.write(`data:${line}\n\n`);
@@ -72,6 +72,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
         debugctl('zero length controlling token, so must fail');
         return false;
       }
+      let returnValue = true;
       try {
         const payload = jwt.decode(this._controlled,process.env.RECORDER_TOKEN);
         debugctl('jwt payload ', payload);
@@ -80,11 +81,14 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
       } catch(e) {
         debugctl('jwt decode threw for client', this.client);
         debug('jwt decode threw error ', e);
+        //token is no longer valid so clear it
+        this._controlled = '';
         /* 
           the most likly cause of this is timeout of the control because it wasn't renewed.  We should
-          stop the recording if it is going
+          stop the recording if it is going 
       
         */
+       
         this._stop();
         return false;
       }
@@ -151,7 +155,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
         this._volume.stderr.unpipe();
         this._volume.stdin.end('q');
       }
-      this._sed.kill();
+      this._sed.stdin.end();
       await Promise.all([this._volumePromise, this._recordingPromise, this._sedPromise]);
       logger('rec', `recorder ${this.name} closed`)
     }

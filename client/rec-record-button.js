@@ -157,7 +157,7 @@ class RecRecordButton extends LitElement {
           <div class="inner stopped ${classMap({enabled: this.enabled})}"><material-icon style="--icon-size:40px">play_circle_outline</material-icon></div>
         `)}
       </div>
-      ${this.enabled? cache(this.pushed? html`<div label>Recording</div>`: html`<div label>Click to Record</div>`): html`<div label></div>`}
+      ${this.enabled? (this.pushed? html`<div label>Recording</div>`: html`<div label>Click to Record</div>`): html`<div label></div>`}
     `;
   }
   _toggle() {

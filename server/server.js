@@ -296,7 +296,7 @@
       req.recorder =  recorders[req.params.channel];
       next();
     } else {
-      next(new Error ('No Recorder for id ' + req.params.channel))
+      next(`Requested channel ${req.params.channel} not plugged in`);
     }
 
   }

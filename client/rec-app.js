@@ -30,6 +30,11 @@ import './rec-record-button.js';
 import './round-switch.js';
 
 import Ticker from './ticker.js';
+function getErrorObject(){
+  try { throw Error('') } catch(err) { return err; }
+}
+
+
 
 class RecApp extends LitElement {
 
@@ -54,8 +59,8 @@ class RecApp extends LitElement {
   }
   constructor() {
     super();
+    console.time('rec');
     this.subscribeid = Date.now();
-
     this._resetState();
     this._eventAdd = this._eventAdd.bind(this);
     this._eventClose = this._eventClose.bind(this);
@@ -70,7 +75,7 @@ class RecApp extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.removeAttribute('unresolved');
-    this,this._resetState();
+    this._resetState();
     this.eventSrc = new EventSource(`/api/${this.subscribeid}/status`);
     this.eventSrc.addEventListener('add', this._eventAdd);
     this.eventSrc.addEventListener('close', this._eventClose);
@@ -98,117 +103,174 @@ class RecApp extends LitElement {
           //need a temporary name because we don't have the full one yet
           this.micname = this.mic.charAt(0).toUpperCase() + this.mic.substring(1);
         }
+      }
+    }
+    if (changed.has('state')) {
+      if (changed.get('state')  === 'No Mic') {
+        this.micdata[this.mic].filename = '';
+        this.filename = '';
+      }
+      if (changed.get('state') !== 'New Mic') {
+        switch (this.state) {
+          case 'Record' :
+            const mic = this.mic;
+            this.colour = 'led-blue';
+            this._callApi('start', mic, this.micdata[mic].token).then(({state,name}) => {
+              if (state) {
+                this.micdata[mic].recording = true
+                this.micdata[mic].filename = name;
+                if (this.mic === mic) this.filename = name;
+              } else {
+                this.micdata[this.mic].state = 'Control';
+                if (this.mic === mic) {
+                  this.recstate = 'Control';
+                }
+              }
+            });
+
+            break;
+          case 'Control':
+            this.colour = 'led-blue';
+            if (changed.get('state') === 'Record') {
+              //we were recording so must now stop
+              this._stopRecording();
+            } else {
+              this._takeControl();
+            }
+            
+            break;
+          case 'Monitor':
+
+            this.colour='led-yellow';
+            switch (changed.get('state')) {
+              case 'Record':
+                this._stopRecording();
+                break;
+              case 'Control':
+                this._releaseControl(this.mic);
+                break;
+            }
+          
+            break;
+          case 'No Mic':
+            this.colour - 'led-red';
+            switch (changed.get('state')) {
+              case 'Record':
+                this._stopRecording();
+                break;
+              case 'Control':
+                this._releaseControl(this.mic);
+                break;
+            }
+            break;
+          case 'New Mic':
+            break;  //do nothing - we will get a new state and undertand where we are
+          default: 
+            /* 
+              we had some sort of error with our eventSrc, to shut it down wait 5 secs and
+              then start it up again
+
+              But first we need to shut down if we are holding stuff
+            */
+            this.colour='led-red';
+            switch (changed.get('state')) {
+              case 'Record':
+                this._stopRecording();
+                break;
+              case 'Control':
+                this._releaseControl(this.mic);
+                break;
+            }
+            this.eventSrc.close();
+            this.eventSrc.removeEventListener('add', this._eventAdd);
+            this.eventSrc.removeEventListener('close', this._eventClose);
+            this.eventSrc.removeEventListener('release', this._eventRelease);
+            this.eventSrc.removeEventListener('remove', this._eventRemove);
+            this.eventSrc.removeEventListener('status', this._eventStatus);
+            this.eventSrc.removeEventListener('take', this._eventTake);
+            this.micstate = {};
+            setTimeout(() => {
+              this.subscribeid = Date.now();//Make a new id so we don't get hung up on the last one
+              this.eventSrc = new EventSource(`/api/${this.subscribeid}/status`);
+              this.eventSrc.addEventListener('add', this._eventAdd);
+              this.eventSrc.addEventListener('close', this._eventClose);
+              this.eventSrc.addEventListener('release', this._eventRelease);
+              this.eventSrc.addEventListener('remove', this._eventRemove);
+              this.eventSrc.addEventListener('status', this._eventStatus);
+              this.eventSrc.addEventListener('take', this._eventTake);
+              //now we are up and running we will soon get a status event        
+            },5000);
+        }
+      } 
+
+    }
+    if (changed.has('mode')) {
+      if (this.mic.length > 0) {
+        if (this.mode === 'Monitor' && (this.state === 'Control' || this.state === 'Record')) {
+          this.micdata[this.mic].state = 'Monitor'
+          this.recstate = 'Monitor';
+        }
+        if (this.mode === 'Control' && this.state === 'Monitor') {
+          //we need to try and take control if the microphone is free
+          if (!this.micstate[this.mic].taken) {
+            this.micdata[this.mic].state = 'Control';
+            this.recstate = 'Control';
+          }
+        }
+      }
+    }
+    if (changed.has('pushed')) {
+      if (this.pushed && this.state  === 'Control') {
+        this.micdata[this.mic].state = 'Record';
+        this.recstate = 'Record';
+      } 
+      if (!this.pushed && this.state === 'Record') {
+        this.micdata[this.mic].state = 'Control';
+        this.recstate = 'Control';
+      }
+    }
+    if (changed.has('mic') || changed.has('micstate')) {
+      if (this.mic.length > 0 && this.micstate[this.mic] !== undefined) {
         const myMic = this.micstate[this.mic];
         if (myMic.connected) {
-          if (this.taken) {
-            if (!myMic.taken || myMic.client !== this.subscribeid) {
+          if (this.state === 'Control' || this.state === 'Record') {
+            //we might have lost control, or we might not yet have taken it yet
+            if (this.taken && (!myMic.taken || myMic.client !== this.subscribeid.toString())) {
               //we have lost control for some reason
-              this.state = 'Monitor';
+              this.micdata[this.mic].state = 'Monitor';
+              this.recstate = 'Monitor';
             }
           } else {
             if (!myMic.taken && this.mode === 'Control') {
               //the mic has become free and we are in control mode so try and take it
-              this.state = 'Control'
+              this.micdata[this.mic].state = 'Control';
+              this.recstate = 'Control'
             } else {
-              this.state = 'Monitor';
+              this.micdata[this.mic].state = 'Monitor';
+              this.recstate = 'Monitor';
             }
           }
         } else {
-          this.state = 'No Mic';
-        }
-      }
-    } else if (this.micname.length === 0 && this.mic.length > 0) {
-        //need a temporary name because we don't have the full one yet
-        this.micname = this.mic.charAt(0).toUpperCase() + this.mic.substring(1);
-    }
-    if (changed.has('mode')) {
-      if (this.mode === 'Monitor' && (this.state === 'Control' || this.state === 'Record')) {
-        this.state = 'Monitor';
-      }
-      if (this.mode === 'Control' && this.state === 'Monitor') {
-        //we need to try and take control if the microphone is free
-        if (!this.mics[this.mic].taken) this.state = 'Control';
-      }
-    }
-    if (changed.has('state')) {
-      switch (this.state) {
-        case 'Record' :
-          this._callApi('start', this.channel, this.token).then(({state,name}) => {
-            if (state) {
-              this.recording = true
-              this.filename = name;
-            } else {
-              this.state = 'Control'
+          for(const mic in this.micstate) {
+            if (this.micstate[mic].connected) {
+              this.filename = this.micstate[mic].name;
+              break;
             }
-          });
-          break;
-        case 'Control':
-          if (changed.get('state') === 'Record') {
-            //we were recording so must now stop
-            this._stopRecording();
-          } else {
-            this._takeControl();
           }
-        case 'Monitor':
-          switch (changed.get('state')) {
-            case 'Record':
-              this._stopRecording();
-              break;
-            case 'Control':
-              this._releaseControl();
-              break;
-          }
-          break;
-        case 'No Mic':
-        case 'New Mic':
-          switch (changed.get('state')) {
-            case 'Record':
-              this._stopRecording();
-              break;
-            case 'Control':
-              this._releaseControl();
-              break;
-          }
-        default: 
-          /* 
-            we had some sort of error with our eventSrc, to shut it down wait 5 secs and
-            then start it up again
-
-            But first we need to shut down if we are holding stuff
-          */
-          switch (changed.get('state')) {
-            case 'Record':
-              this._stopRecording();
-              break;
-            case 'Control':
-              this._releaseControl();
-              break;
-          }
-          this.eventSrc.close();
-          this.eventSrc.removeEventListener('add', this._eventAdd);
-          this.eventSrc.removeEventListener('close', this._eventClose);
-          this.eventSrc.removeEventListener('release', this._eventRelease);
-          this.eventSrc.removeEventListener('remove', this._eventRemove);
-          this.eventSrc.removeEventListener('status', this._eventStatus);
-          this.eventSrc.removeEventListener('take', this._eventTake);
-          this.micstate = {};
-          setTimeout(() => {
-            this.subscribeid = Date.now();//Make a new id so we don't get hung up on the last one
-            this.eventSrc = new EventSource(`/api/${this.subscribeid}/status`);
-            this.eventSrc.addEventListener('add', this._eventAdd);
-            this.eventSrc.addEventListener('close', this._eventClose);
-            this.eventSrc.addEventListener('release', this._eventRelease);
-            this.eventSrc.addEventListener('remove', this._eventRemove);
-            this.eventSrc.addEventListener('status', this._eventStatus);
-            this.eventSrc.addEventListener('take', this._eventTake);
-            //now we are up and running we will soon get a status event        
-          },5000);
-      } 
-
-    }
+          this.micdata[this.mic].state = 'No Mic';
+          this.recstate = 'No Mic';
+        }
+      } else if (this.mic.length === 0 && this.mics.length > 0) this.mic = this.mics[0].toLowerCase();
+    } 
+      
+    
     super.updated(changed);
   }
-
+  set recstate(state) {
+    const newState = state;
+    this.updateComplete.then(() => requestAnimationFrame(() => 
+      this.state = newState));   
+  }
   render() {
     return html`
       <style>
@@ -290,9 +352,10 @@ class RecApp extends LitElement {
         <div id="icon" @click=${this._downloadCert}></div>
         <rec-led .colour=${this.colour} style="--led-size: 12px;"></rec-led>
         <rec-record-button ?enabled=${this.taken} ?pushed=${this.state === 'Record'} @record-change=${this._recordChange}></rec-record-button>  
-        <round-switch title="Mode" id="mode" .choices=${this.modes} .selection=${this.mode} @selection-change=${this._modeChange}></round-switch>
-        <round-switch title="Mike" id="mic" .choices=${this.mics} .selection=${this.mic} @selection-change=${this._micChange}></round-switch>
-        <rec-lcd 
+        <round-switch title="Mode" id="mode" ?locked=${this.pushed} .choices=${this.modes} .selected=${this.mode} @selection-change=${this._modeChange}></round-switch>
+        <round-switch title="Mic" id="mic" .choices=${this.mics} .selected=${this.mic} @selection-change=${this._micChange}></round-switch>
+        <rec-lcd
+          .alt=${this.state === 'No Mic'} 
           .channel=${this.micname}
           .state=${this.state}
           .filename=${this.filename}
@@ -300,7 +363,7 @@ class RecApp extends LitElement {
           .leftpeak=${this.leftpeak}
           .rightpeak=${this.rightpeak}
         ></rec-lcd>
-        <rec-volume id="volume" .channel=${this.mic} @loudness-change=${this._newLoudness}></rec-volume>
+        <rec-volume id="volume" .channel=${this.micstate[this.mic] !== undefined && this.micstate[this.mic].connected ? this.mic:''} @loudness-change=${this._newLoudness}></rec-volume>
       </div>
       <div class="feet">
         <div id="left" class="foot"></div>
@@ -315,16 +378,10 @@ class RecApp extends LitElement {
     } catch(err) {
       console.warn('Error response to Api Request ', func , ' channel ', channel, ' token ', token, ':' , err);
       this.color = 'led-red'; //this is our external showing that all is not well.
-      this.state = 'Comms'
+      this.micdata[this.mic].state = 'Comms';
+      this.recstate = 'Comms'
     }
-    return false;
-  }
-  _changeChannel(e) {
-    const newMic = e.details.toLowerCase();
-    this.state = 'New Mic';
-    this.updateComplete().then(() => {
-      this.mic = newMic;
-    });
+    return {state: false};
   }
   _downloadCert() {
     this.link.setAttribute('href', '/assets/akc-crt.pem');
@@ -338,25 +395,41 @@ class RecApp extends LitElement {
       const newMic = this.micstate[channel] === undefined;
       Object.assign(this.micstate[channel],{connected: true, taken: false, client: '', name: name});
       this.micstate = Object.assign({},this.micstate);
-      if (newMic) this.mics = Object.keys(this.micstate);
+      if (newMic) {
+        this.mics = [];
+        for(const mic in this.micstate) {
+          const lmic = mic.toLowerCase();
+          this.mics.push(lmic.charAt(0).toUpperCase() + lmic.substring(1));
+        }
+  
+        this.micdata[channel] = {
+          state: this.micstate[mic].connected ? 'Monitor' : 'No Mic', 
+          filename: '', 
+          taken: false, 
+          token: '',
+          recording: false,
+          pushed: false,
+          mode: 'Monitor'
+        };
+      }
     } catch (e) {
       console.warn('Error in parsing Event Add:', e);
       this.colour = 'led-red';
-      this.state = 'Err:Add';
+      this.recstate = 'Err:Add';
     }
 
   }
   _eventClose() {
     //the server is closing down, so reset everything to wait for it to come up again
-    this.recording = false;
     this.taken = false;
-    for (let mic of Object.keys(this.micstate)) {
+    for (let mic in this.micstate) {
       Object.assign(this.micstate[mic] , {connected: false, taken: false, client:'' });
     }
     this.micstate = Object.assign({},this.micstate);
     this. mic = '';
-    this.state = 'Closed'
-    this.ticker.destroy();
+    this.recstate = 'Closed'
+    this.micdata = [];
+    if (this.ticker !== undefined) this.ticker.destroy();
   }
   _eventRelease(e) {
     try {
@@ -366,7 +439,7 @@ class RecApp extends LitElement {
     } catch (e) {
       console.warn('Error in parsing Event Release:', e);
       this.colour = 'led-red';
-      this.state = 'Err:Rel';
+      this.recstate = 'Err:Rel';
     }
   }
   _eventRemove(e) {
@@ -377,7 +450,7 @@ class RecApp extends LitElement {
     } catch (e) {
       console.warn('Error in parsing Event Remove:', e);
       this.colour = 'led-red';
-      this.state = 'Err:Rem';
+      this.recstate = 'Err:Rem';
     }
   }
   _eventStatus(e) {
@@ -387,12 +460,20 @@ class RecApp extends LitElement {
       for(const mic in this.micstate) {
         const lmic = mic.toLowerCase();
         this.mics.push(lmic.charAt(0).toUpperCase() + lmic.substring(1));
+        if (this.micdata[mic] === undefined) this.micdata[mic] = {
+          state: this.micstate[mic].connected ? 'Monitor' : 'No Mic', 
+          filename: '', 
+          taken: false, 
+          token: '',
+          recording: false,
+          pushed: false,
+          mode: 'Monitor'
+        };
       }
-      this.mics = Object.keys(this.micstate);
     } catch (e) {
       console.warn('Error in parsing Event Status:', e);
       this.colour = 'led-red';
-      this.state = 'Err:Sts'
+      this.recstate = 'Err:Sts'
     }
   }
   _eventTake(e) {
@@ -403,16 +484,28 @@ class RecApp extends LitElement {
     } catch (err) {
       console.warn('Error in parsing Event Remove:', err);
       this.colour = 'led-red';
-      this.state = 'Err:Tak'
+      this.recstate = 'Err:Tak'
     }
 
   }
 
   _micChange(e) {
-    this.mic = this.details.toLowerCase();
+    const newMic = e.detail.toLowerCase();
+    if (newMic !== this.mic) {
+      this.recstate = 'New Mic';
+      this.updateComplete.then(() => {
+        this.mic = newMic;
+        this.recstate = this.micdata[this.mic].state;
+        this.taken = this.micdata[this.mic].taken;
+        this.filename = this.micdata[this.mic].filename;
+        this.mode = this.micdata[this.mic].mode;
+        this.pushed = this.micdata[this.mic].pushed;
+      });
+    }
   }
   _modeChange(e) {
-    this.mode = e.details;
+    this.mode = e.detail;
+    if (this.mic.length > 0) this.micdata[this.mic].mode = this.mode;
   }
   _newLoudness(e) {
     this.loudness = e.detail.integrated;
@@ -421,14 +514,14 @@ class RecApp extends LitElement {
   }
   _recordChange(e) {
     this.pushed = e.detail;
-    
+    if (this.mic.length > 0) this.micdata[this.mic].pushed = this.pushed;
   }
-  _releaseControl() {
-    this._callApi('release', this.mic, this.token).then(({state}) => {
-      if (this.ticker !== undefined) {
-        this.ticker.destroy();      
-      }
-      this.taken = false;
+  _releaseControl(myMic) {
+    const mic = myMic;
+    this._callApi('release', mic, this.micdata[mic].token).then(({state}) => {
+      if (this.micdata[mic].ticker !== undefined) this.micdata[mic].ticker.destroy();      
+      this.micdata[mic].taken = false;
+      if (mic === this.mic) this.taken = false;
     });
 
 
@@ -436,14 +529,15 @@ class RecApp extends LitElement {
   }
   _resetState() {
     this.mics = [];
+    this.micdata = [];
     this.mic = '';
     this.micname = '';
     this.modes = ['Monitor', 'Control']
     this.mode = 'Monitor';
+ 
     this.taken = false;
     this.colour = 'led-red';  //initial state is blinking red
     this.pushed = false;
-    this.recording = false;
     this.state = 'No Mic';
     this.filename = ''
     this.loudness = '';
@@ -455,43 +549,57 @@ class RecApp extends LitElement {
     }
   }
   _stopRecording() {
-    this._callApi('stop', this.channel, this.token).then(({state,kept}) => {
-      if (!(state && kept)) this.filename = '';
-      if (this.state !== 'Control') {
-        this._releaseControl();
+    const mic = this.mic;
+    this._callApi('stop', mic, this.micdata[mic].token).then(({state,kept}) => {
+      if (!(state && kept)) {
+        this.micdata[mic].filename = '';
+        if (this.mic === mic) this.filename = '';
+        
+      }
+      if (this.micdata[mic].state !== 'Control') {
+        this._releaseControl(mic);
       }  
     });
 
   }
   _takeControl() {
-    this._callApi('take',this.mic, this.subscribeid).then( async ({state,token}) => {
+    const mic = this.mic;
+    this._callApi('take', mic, this.subscribeid).then( async ({state,token}) => {
       if (state) {
-        this.token = token;
-        this.taken = true;
-        this.colour = 'led-blue';
-        this.ticker = new Ticker(4*60*1000); //create a renew ticker for 4 minutes
+        this.micdata[mic].token = token;
+        this.micdata[mic].taken = true;
+        if (this.mic === mic) {
+          this.taken = true;
+          this.colour = 'led-blue';
+        }
+        this.micdata[mic].ticker = new Ticker(4*60*1000); //create a renew ticker for 4 minutes
         
         try {
           while(true) {
-            await this.ticker.nextTick;
-            const {state, token} = await this._callApi('renew', this.mic, this.token)
+            await this.micdata[mic].ticker.nextTick;
+            const {state, token} = await this._callApi('renew', mic, this.micdata[mic].token);
             if (state) {
-              this.token = token;
+              this.micdata[mic].token = token;
             } else {
-              this.token = '';
-              this.state = 'Monitor';
-              this.taken = false;
-              this.colour = 'led-yellow';
-              this.ticker.destroy();
+              this.micdata[mic].token = '';
+              this.micdata[mic].state = 'Monitor';
+              this.micdata[mic].taken = false;
+              if (this.mic === mic) {
+                this.recstate = 'Monitor';
+                this.taken = false;
+                this.colour = 'led-yellow';
+              }
+              this.micdata[mic].ticker.destroy();
             }
           }
 
         } catch(e) {
           //someone closed the ticker
-          delete this.ticker;
+          delete this.micdata[mic].ticker;
         }
       } else {
-        this.state = 'Monitor';
+        this.micdata[mic].state = 'Monitor';
+        if (this.mic === mic) this.recstate = 'Monitor';
       }
     });
 
