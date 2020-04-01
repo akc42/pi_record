@@ -221,6 +221,10 @@
           subscribedChannels.set(response, {client: client, token:'', recorder: null});
           req.once('end', () => {
             debug('client closed status channel ', client.toString());
+            const entry = subscribedChannels.get(response);
+            if (entry.recorder !== null) {
+              entry.recorder.release(entry.token);
+            }
             subscribedChannels.delete(response);
 
           });
