@@ -42,12 +42,6 @@ class RecRecordButton extends LitElement {
     this.enabled = false;
     this.pushed = false;
   }
-  connectedCallback() {
-    super.connectedCallback();
-  }
-  disconnectedCallback() {
-    super.disconnectedCallback();
-  }
   update(changed) {
     if (changed.has('pushed')) {
       this.dispatchEvent(new CustomEvent('record-change',{
@@ -56,7 +50,6 @@ class RecRecordButton extends LitElement {
         detail: this.pushed
       }));
     }
-
     super.update(changed);
   }
   firstUpdated() {

@@ -37,14 +37,10 @@ class RecVolume extends LitElement {
     this.channel = '';
     this.running = false;
     this._receiveVolumeData = this._receiveVolumeData.bind(this);
+    this._stopChannel = this._stopChannel.bind(this);
     this.animationInProgress = true;
   }
   updated(changed) {
-    if (changed.has('channel') && this.ctxPk !== undefined && changed.get('channel') !== undefined) {
-      //we are not in the start up phase
-      if (changed.get('channel').length > 0) this._stopChannel(); //there was one running so stop it
-      if (this.channel.length > 0 ) this._startChannel(); 
-    }
     if (this.receivedFirstDataMessage) {
       if (changed.has('overallLoudness') || changed.has('leftPeak') || changed.has('rightPeak')) {
         this.dispatchEvent(new CustomEvent('loudness-change',{
@@ -58,6 +54,15 @@ class RecVolume extends LitElement {
         }));
       }
     }
+    if (changed.has('channel') && this.ctxPk !== undefined && changed.get('channel') !== undefined) {
+      //we are not in the start up phase
+      if (changed.get('channel').length > 0) {
+        console.log('stopping volume channel because of channel change');
+        this._stopChannel(); //there was one running so stop it
+      }
+      if (this.channel.length > 0 ) this._startChannel(); 
+    }
+
     super.updated(changed);
   }
   firstUpdated() {
@@ -72,12 +77,12 @@ class RecVolume extends LitElement {
     this.gradPk.addColorStop(0.21875, 'limegreen');
     this.gradPk.addColorStop(1, 'green');
     this.gradLu = this.ctxLu.createLinearGradient(0,0,0,448);
-    this.gradLu.addColorStop(0,'red');
-    this.gradLu.addColorStop(0.1718,'orange');
-    this.gradLu.addColorStop(0.1719, 'gold');
-    this.gradLu.addColorStop(0.3906, 'yellow');
-    this.gradLu.addColorStop(0.390650,'limegreen');
-    this.gradLu.addColorStop(1.0, 'green')
+    this.gradLu.addColorStop(0,'#9c1f07');
+    this.gradLu.addColorStop(0.161,'#9c1f07');
+    this.gradLu.addColorStop(0.161, '#1b611b');
+    this.gradLu.addColorStop(0.395, '#1b611b');
+    this.gradLu.addColorStop(0.395,'#3f3399');
+    this.gradLu.addColorStop(1.0, '#3f3399')
 
     requestAnimationFrame(() => {
       //fill canvas with grey background
@@ -249,19 +254,24 @@ class RecVolume extends LitElement {
 
     
   }
-  _reset() {
-    this.sOffset = this.mOffset = 464;
-  }
+
 
   _startChannel() {
     this.receivedFirstDataMessage = false;
+    console.log(`Starting ${this.channel} volume`);
     this.eventSrc = new EventSource(`/api/${this.channel}/volume`);
     this.eventSrc.addEventListener('message', this._receiveVolumeData);  
-    this._reset();
+    this.eventSrc.addEventListener('close', this._stopChannel);
+    this.sOffset = this.mOffset = 464;
   }
   _stopChannel() {
+    console.log(`Stopping ${this.channel} volume`);
     this.eventSrc.close();
+    this.eventSrc.removeEventListener('close', this._stopChannel);
     this.eventSrc.removeEventListener('message', this._receiveVolumeData);
+    this.animationInProgress = false;
+    const resetValue = {data:' M: -70.0 S: -70.0     I: -70.0  P:  -70.0 -70.0  K:    70.0   70.0 '};
+    this._receiveVolumeData(resetValue);
   }
 }
 

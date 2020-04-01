@@ -25,13 +25,15 @@ class RecLcd extends LitElement {
     return {
       PIXEL: 2,
       COLUMNS: 20,
-      ROWS: 4,
+      ROWS: 5,
       CHANNEL_START: 0,
       CHANNEL_LENGTH: 12,
       STATE_START: 13,
       STATE_LENGTH: 7,
       FILE_START: 20,
       FILE_LENGTH: 20,
+      TIME_START: 80,
+      TIME_LENGTH: 20,
       LOUD_START: 40,
       LOUD_LENGTH: 20,
       PEAK_START: 60,
@@ -47,7 +49,8 @@ class RecLcd extends LitElement {
       loudness: {type: String},
       leftpeak: {type: String},
       rightpeak: {type: String},
-      alt: {type: Boolean}
+      alt: {type: Boolean},
+      seconds: {type: Number}
     };
   }
   constructor() {
@@ -60,6 +63,10 @@ class RecLcd extends LitElement {
     this.leftpeak = '';
     this.rightpeak = '';
     this.alt = false;
+    this.seconds = 0;
+    this.minutes = 0;
+    this.hours = 0;
+    this.ticker = 0;
     this.animationInProgress = true; //prevents any early display
   }
   connectedCallback() {
@@ -67,6 +74,15 @@ class RecLcd extends LitElement {
     if (this.screen !== undefined) {
       this._displayContent();
     }
+    this.addEventListener('timer-reset', this._resetTimer);
+  }
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this.ticker !== 0) {
+      clearInterval(this.ticker);
+      this.ticker = 0;
+    }
+    this.removeEventListener('timer-reset', this._resetTimer);
   }
   update(changed) {
     if (this.screen !== undefined) {
@@ -74,7 +90,7 @@ class RecLcd extends LitElement {
         this.firstUpdated();  //just creates a new screen and displays everything
       } else {
         if (changed.has('channel') || changed.has('state') || changed.has('filename') || changed.has('loudness') ||
-        changed.has('filename')  || changed.has('leftpeak') || changed.has('rightpeak')) this._displayContent() ;
+        changed.has('filename')  || changed.has('leftpeak') || changed.has('rightpeak') || changed.has('seconds')) this._displayContent() ;
 
       }
     }
@@ -126,6 +142,14 @@ class RecLcd extends LitElement {
       this.screen.writeString(this.state.substr(0,RecLcd.constants.STATE_LENGTH),RecLcd.constants.STATE_START);
       const file = this.filename.length > 0 ? `${this.alt? 'Alt Mic': 'File'}: ${this.filename}`.substr(0,RecLcd.constants.FILE_LENGTH) : ''
       this.screen.writeString(file,RecLcd.constants.FILE_START);
+      if (!this.alt) {
+        const seconds = this.seconds % 60;
+        const minutes = Math.floor(this.seconds/60) % 60;
+        const hours = Math.floor(Math.floor(this.seconds/60)/60) % 24;
+        let timeString = 'Since: ' + (hours === 0? '  ' : ('0' + hours.toString()).slice(-2) + ':');
+        timeString += ('0' + minutes.toString()).slice(-2) + ':' + ('0' + seconds.toString()).slice(-2);
+        this.screen.writeString(timeString.substr(0,RecLcd.constants.TIME_LENGTH),RecLcd.constants.TIME_START);
+      }
       const loud = this.loudness.length > 0 ? `Int Loud: ${this.loudness.substr(0,5).padStart(5,' ')} LUFS`.substr(0,RecLcd.constants.LOUD_LENGTH) : '';
       this.screen.writeString(loud, RecLcd.constants.LOUD_START);
       const peak = this.leftpeak.length > 0 || this.rightpeak.length > 0 ?

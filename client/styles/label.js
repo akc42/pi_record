@@ -26,5 +26,6 @@ export default  css`
     margin:5px;
     padding:0;
     font-variant: small-caps;
+    text-align:center;
   }
 `;

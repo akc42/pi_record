@@ -41,14 +41,27 @@ class RoundSwitch extends LitElement {
     this.selected = '';
     this.title = '';
     this.locked = false;
+    this.slightMove = false;
   }
   update(changed) {
     if (changed.has('selected') && this.selected.length > 0) {
-      this.dispatchEvent(new CustomEvent('selection-change', {
-        bubbles: true,
-        cancel: true,
-        detail: this.selected
-      }));
+      if (this.locked) {
+        if (this.slightMove) {
+          const previousSelection = changed.get('selected');
+          if (previousSelection !== undefined) {
+            setTimeout(() => {
+              this.selected = previousSelection
+              this.slightMove = false;
+            }, 300); //let it start to go towards new selection before sending it back
+          }
+        }
+      } else {
+        this.dispatchEvent(new CustomEvent('selection-change', {
+          bubbles: true,
+          cancel: true,
+          detail: this.selected
+        }));
+      }
     }
     super.update(changed);
   }
@@ -115,6 +128,7 @@ class RoundSwitch extends LitElement {
         }
         .label:hover {
           background: black;
+          opacity: 0.7;
           
         }
         .clickable {
@@ -125,7 +139,7 @@ class RoundSwitch extends LitElement {
         }
         .clickable:hover {
           background:black;
-          opacity:0.1;
+          opacity:0.2;
         }
       </style>
 
@@ -151,8 +165,9 @@ class RoundSwitch extends LitElement {
       
     `;
   }
-  _selectChoice(e) {
-    if (!this.locked) this.selected = e.currentTarget.dataset.choice;
+  _selectChoice(e) { 
+    if (this.locked) this.slightMove = true;
+    this.selected = e.currentTarget.dataset.choice;
   }
 }
 customElements.define('round-switch', RoundSwitch);

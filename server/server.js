@@ -106,7 +106,7 @@
       router.get('/api/:channel/:client/take',checkRecorder, (req,res) => {
         debug('take request received');
         const client = req.params.client;
-        const {state, token } = req.recorder.take(client);
+        const {state, token, controller } = req.recorder.take(client);
         res.statusCode = 200;
         if (state) {
           //lets see if we are a subscriber
@@ -121,7 +121,7 @@
           res.end(JSON.stringify({state: true, token: token}));
           sendStatus('take',{ client: client, channel: req.params.channel});
         } else {
-          res.end(JSON.stringify({state: false, token: ''}));
+          res.end(JSON.stringify({state: false, client: controller}));
         }
       });
       router.get('/api/:channel/:token/renew', checkRecorder,(req,res) => {
@@ -174,6 +174,18 @@
         res.statusCode = 200;
         res.end(JSON.stringify(await req.recorder.stop(req.params.token)));
       });
+      router.get('/api/:channel/:token/reset', checkRecorder, async (req,res) => {
+        debug('got a loudness reset request with params', req.params);
+        res.statusCode = 200;
+        res.end(JSON.stringify(await req.recorder.reset(req.params.token)));
+      }); 
+      router.get('/api/:channel/timer', checkRecorder, (req,res) => {
+        debug('got a timer request for channel ', req.recorder.name)
+        res.statusCode = 200;
+        const time = req.recorder.timer;
+        debug('recorder said timer was ', time);
+        res.end(JSON.stringify({time: time}));
+      });
       router.get('/api/:channel/volume', checkRecorder, (req, res) => {
         if (req.headers.accept && req.headers.accept == 'text/event-stream') {
           const recorder =req.recorder;
@@ -209,10 +221,6 @@
           subscribedChannels.set(response, {client: client, token:'', recorder: null});
           req.once('end', () => {
             debug('client closed status channel ', client.toString());
-            const entry = subscribedChannels.get(response);
-            if (entry.recorder !== null) {
-              entry.recorder.release(entry.token);
-            }
             subscribedChannels.delete(response);
 
           });
@@ -417,14 +425,16 @@
     if (server) {
       logger('app', 'Starting Server ShutDown Sequence');
       try {
-        if (statusTimer !== 0) clearInterval(statusTimer);
-        sendStatus('close',{});
-        let tmp = server;
+        const tmp = server;
         server = null;
+        if (statusTimer !== 0) clearInterval(statusTimer);
+        debug('Tell our subscribers we are shutting down');
+        sendStatus('close',{});
+        debug('Lets just stop for 1/2 second to allow our close events to be send out')
+        await new Promise(resolve => setTimeout(() => resolve(),500));
         debug('about to stop monitoring udev events')
         usb.off('attach', usbAttach);
         usb.off('detach', usbDetach);
-//        await usbDetect.stopMonitoring();
         if (recorders.scarlett !== undefined) {
           //need to shut off the recording smoothly
           debug('stopping scarlett');
@@ -433,11 +443,13 @@
           delete recorders.scarlett;
         }
         if (recorders.yeti !== undefined) {
-          debug('stopping yetti');
+          debug('stopping yeti');
           await recorders.yeti.close();
           debug('yeti stopped');
           delete recorders.yeti;
         }
+        debug('Lets just stop for 1/2 second to allow our volume subscriber shutdown messages to go out')
+        await new Promise(resolve => setTimeout(() => resolve(),500));
         debug('About to close Web Server');
         tmp.destroy();
         logger('app', 'Recorder Server ShutDown');
