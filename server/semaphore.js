@@ -22,7 +22,7 @@
 
   let sharedPromise = Promise.resolve();
   
-  class Sempaphore {
+  class Semaphore {
       constructor() {
           let priorP = sharedPromise;
           let resolver;
@@ -50,4 +50,4 @@
       }
   }
 
-module.exports = Semphore;
+module.exports = Semaphore;

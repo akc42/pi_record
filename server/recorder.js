@@ -25,7 +25,7 @@ const jwt = require('jwt-simple');
 const {spawn} = require('child_process');
 const rl = require('readline');
 const logger = require('./logger');
-const Semiphore = require('./semiphore');
+const Semaphore = require('./semaphore');
 
 //eslint-disable-next-line   max-len
 const volargs = '-hide_banner -nostats -f alsa -acodec pcm_s32le -ac:0 2 -ar 192000 -i hw:dddd -filter_complex ebur128=peak=true:meter=18 -f null -';
@@ -143,7 +143,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
     async _stop() {
       //internal function to stop recording
       if (this.isRecording) {
-        const s = new Semiphore();
+        const s = new Semaphore();
         await s.start();  //make sure we are not switching over right now
         this._recording.stderr.unpipe(); //disconnect from the volume filter
         this._recording.stdin.end('q'); //write this to end the recording
@@ -158,7 +158,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
     }
     async close() {
       debug('Recorder ',this.name, ' received close request whilst volume production is ', this._volume !== undefined, ' and recording is ', this._recording !== undefined);
-      const s = new Semiphore();
+      const s = new Semaphore();
       await s.start();
       if (this.isRecording) {
 
@@ -177,7 +177,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
       debug('Recorder ', this.name ,' request to start recording')
       if(this._checkToken(token)) { //only a valid token will allow us to start
         if (!this.isRecording ) {
-          const s = new Semiphore();
+          const s = new Semaphore();
           await s.start();
           this._volume.stderr.unpipe();
           this._volume.stdin.end('q');
@@ -246,7 +246,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
           debug(`Recorder ${this.name} failed to reset because of Currently Recording`);
           return {state: false, reason: 'Currently Recording'};
         }
-        const s = new Semiphore();
+        const s = new Semaphore();
         await s.start()
         this._volume.stderr.unpipe();
         this._volume.stdin.end('q');
