@@ -30,7 +30,11 @@
   function logger(level, message) {
     let logLine = '';
     if (process.env.PAS_NOLOG === undefined) {
-      let ldate = new Date().toLocaleString();
+      const aDate = new Date();
+      const day = ('00' + aDate.getDate().toString()).slice(-2);
+      const month =  ('00' + (aDate.getMonth() + 1).toString()).slice(-2);
+      const year = ('000' + aDate.getFullYear().toString()).slice(-4);
+      const ldate = day +'/' + month + '/' + year + ' ' + aDate.toTimeString().substring(0,8);
       logLine += ' ' + ldate + ' ' + COLOURS[level](message);
       //eslint-disable-next-line no-console
       console.log(logLine);

@@ -168,8 +168,9 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
         this._volume.stderr.unpipe();
         this._volume.stdin.end('q');
       }
+      await Promise.all([this._volumePromise, this._recordingPromise]);
       this._sed.stdin.end();
-      await Promise.all([this._volumePromise, this._recordingPromise, this._sedPromise]);
+      await this._sedPromise;
       s.end();
       logger('rec', `recorder ${this.name} closed`)
     }
