@@ -25,6 +25,7 @@ const jwt = require('jwt-simple');
 const {spawn} = require('child_process');
 const rl = require('readline');
 const logger = require('./logger');
+const Semaphore = require('./semaphore');
 
 //eslint-disable-next-line   max-len
 const volargs = '-hide_banner -nostats -f alsa -acodec pcm_s32le -ac:0 2 -ar 192000 -i hw:dddd -filter_complex ebur128=peak=true:meter=18 -f null -';
@@ -142,10 +143,13 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
     async _stop() {
       //internal function to stop recording
       if (this.isRecording) {
+        const s = new Semaphore();
+        await s.start();  //make sure we are not switching over right now
         this._recording.stderr.unpipe(); //disconnect from the volume filter
         this._recording.stdin.end('q'); //write this to end the recording
         const filekept = await this._recordingPromise;
         this._startVolume();  //go back to plain volume output
+        s.end();
         logger('rec', `recorder ${this.name} stopped recording`);
         return {state: true, kept: filekept};
       }
@@ -154,7 +158,10 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
     }
     async close() {
       debug('Recorder ',this.name, ' received close request whilst volume production is ', this._volume !== undefined, ' and recording is ', this._recording !== undefined);
+      const s = new Semaphore();
+      await s.start();
       if (this.isRecording) {
+
         this._recording.stderr.unpipe(); //disconnect from the volume filter
         this._recording.stdin.end('q'); //write this to end the recording
       } else if (this._volume !== undefined) { //check it hasn't finished prematurely 
@@ -163,12 +170,15 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
       }
       this._sed.stdin.end();
       await Promise.all([this._volumePromise, this._recordingPromise, this._sedPromise]);
+      s.end();
       logger('rec', `recorder ${this.name} closed`)
     }
     async record(token) {
       debug('Recorder ', this.name ,' request to start recording')
       if(this._checkToken(token)) { //only a valid token will allow us to start
         if (!this.isRecording ) {
+          const s = new Semaphore();
+          await s.start();
           this._volume.stderr.unpipe();
           this._volume.stdin.end('q');
           await this._volumePromise;
@@ -194,6 +204,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
             delete this._recording;
             resolve(kept);
           }));
+          s.end();
           logger('rec', `recorder ${this.name} recording ${filename}`);
           return {state: true, name: basename}; 
         }
@@ -227,6 +238,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
       return false;
     }
     async reset(token) {
+
       debug(`Recorder ${this.name} request to reset loudness`);
       //we do that by stopping and restarting ffmpeg - but only if it is not recording.
       if (this._checkToken(token)) {
@@ -234,10 +246,13 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
           debug(`Recorder ${this.name} failed to reset because of Currently Recording`);
           return {state: false, reason: 'Currently Recording'};
         }
+        const s = new Semaphore();
+        await s.start()
         this._volume.stderr.unpipe();
         this._volume.stdin.end('q');
         await this._volumePromise;
         this._startVolume();
+        s.end();
         return {state: true, timer: this.timer};
       } else {
         debug(`Recorder ${this.name} failed to reset because of Invalid Token`);
