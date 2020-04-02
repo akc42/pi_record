@@ -19,133 +19,126 @@
 */
 //Web worker script to manage status messages.
 
+importScripts('./ticker.js');
+
 const subscribeid = Date.now();  //create a unique (good enougjt)
 const micstate = {};
+let currentMic = '';
+const mics = [];
+let EventSrc;
 
 
-const eventTake = (e) => {
-  try {
-    const {channel,client} = JSON.parse(e.data);
-    const controlling = client === subscribeid.toString();
-    Object.assign(micstate[channel], {client:client, taken: true, controlling: controlling});
-    if (channel === this.mic) {
-      this.controlling = controlling;
-    } 
-  } catch (err) {
-    console.warn('Error in parsing Event Remove:', err);
-    this.colour = 'led-red';
-    this.state = 'Error:T';
-    this.target = `Error-${this.target}`;  //Just continue where we left off
+onmessage = function(e) {
+  console.group('Status Worker Message');
+  const func = e.data[0];
+  const mic = e.data[1];
+  console.log('Function: ', func, ' with Value ', mic);
+  switch(func) {
+    case 'start':
+      eventSrc = new EventSource(`/api/${subscribeid}/status`);
+      eventSrc.addEventListener('add', eventAdd);
+      eventSrc.addEventListener('close', eventClose);
+      eventSrc.addEventListener('release', eventRelease);
+      eventSrc.addEventListener('remove', eventRemove);
+      eventSrc.addEventListener('status', eventStatus);
+      eventSrc.addEventListener('take', eventTake);   
+      break;
+      case 'newMic' :
+
+    default:
+      console.warn('Web Worker received unknown function ', func);
   }
+  console.groupEnd();
 
 }
+ 
 
 
 const eventAdd = (e) => {
   try {
+    const initialMicsLength = mics.length;
     const {channel, name} = JSON.parse(e.data);
-    if (this.mic.length === 0) {
-      this.mic = channel;
+    if (currentMic.length === 0) {
+      currentMic = channel;
+      self.postMessage(['changeMic', currentMic]);
     }
-    if (this.micstate[channel] === undefined) {
-      this.micstate[channel] = {
+    if (micstate[channel] === undefined) {
+      micstate[channel] = {
         connected: true, 
         taken: false, 
         token: '', 
         client: '',
         controlling: false, 
         name: name,
-        mode: 'Monitor',
+        mode: 'Unknown',
         recording: false, 
-        state : 'Monitor', 
-        target : 'Monitor',
+        state : 'Unknown', 
+        target : 'Unknown',
         filename: ''
       }
       const micU = channel.charAt(0).toUpperCase() + channel.substring(1);
-      if(!this.mics.find(aMic => micU === aMic)) {
-        this.mics.push(micU);
+      if(!mics.find(aMic => micU === aMic)) {
+        mics.push(micU);
       }
-    } else Object.assign(this.micstate[channel],{connected: true, name: name});
-    if (this.mic === channel) {
-      this.micname = name;
-      this.connected = true;
-    } else this._altMic();  //This will kick state into looking at alternative monitors if we need to
-    
+    } else Object.assign(micstate[channel],{connected: true, name: name});
+    if (initialMicsLength !== mics.length) {
+      self.postMessage(['newMics', mics]);
+    }
+    if (currentMic === channel) {
+      self.postMessage(['connect', name]);
+    } 
+
   } catch (e) {
     console.warn('Error in parsing Event Add:', e);
-    this.colour = 'led-red';
-    this.state = 'Error:A';
-    this.target = `Error-${this.target}`;  //Just continue where we left off
+    self.postMessage(['state', 'Error:A']);
   }
 }
 
 
-_eventClose() {
+const eventClose = () => {
   //the server is closing down, so reset everything to wait for it to come up again
-  this.target = 'Close';
-  this.recording = false;
-  this.controlling = false;
-  this.connected = false;
+  self.postMessage(['close', 0]);
   for (const mic in this.micstate) {
     Object.assign(this.micstate[mic], {target: 'Close', State: 'Close', recording: false, contolling: false, connected: false});
-    if (this.micstate[mic].ticker !== undefined) this.micstate[mic].ticker.destroy();
-    delete this.micstate[mic].ticker;
+    if (micstate[mic].ticker !== undefined) micstate[mic].ticker.destroy();
+    delete micstate[mic].ticker;
   }
  }
-_eventRelease(e) {
+const eventRelease = (e) => {
   try {
     const {channel} = JSON.parse(e.data);     
-    Object.assign(this.micstate[channel], {taken :false, client: '', token:''});
-    if (channel === this.mic) {
-      this.controlling = false;
-      this.recording = false;
-      //We might be awaiting release fron another client entirely, so if we are we can now request control
-      this.state = this.connected? (this.state === 'Await R'? 'Req Ctl':'Monitor') : 'No Mic';
-    } else {
-      //This mic might be awaiting release fron another client entirely, so if we are we can now request control when we select it.
-      const nextState = this.micstate[channel].connected ? (this.micstate[channel].state === 'Await R'? 'Req Ctl':'Monitor') : 'No Mic';
-      Object.assign(this.micstate[channel],{controlling: false, recording: false, state: nextState});
-    }
-    if (this.micstate[channel].ticker !== undefined) this.micstate[channel].ticker.destroy();
+    Object.assign(micstate[channel], {taken :false, client: '', token:'', controlling: false, recording: false});
+    if (micstate[channel].ticker !== undefined) micstate[channel].ticker.destroy();
+    self.postMessage(['release', channel]);
   } catch (e) {
     console.warn('Error in parsing Event Release:', e);
-    this.colour = 'led-red';
-    this.state = 'Error:G';
-    this.target = `Error-${this.target}`;  //Just continue where we left off
+    self.postMessage(['state', 'Error:G']);
   }
 }
-_eventRemove(e) {
+const eventRemove = (e) => {
   try {
     const {channel} = JSON.parse(e.data);
-    Object.assign(this.micstate[channel], {taken: false, client: '', token: ''});
-    if (channel === this.mic) {
-      this.connected = false;
-      this.controlling = false;
-      this.recording = false;
-      this.state = 'No Mic'
-    } else {
-      Object.assign(this.micstate[channel],{connected: false, taken: false, token: '', available: false, recording: false, state: 'No Mic'});
-      this._altMic();
-    }
-    if (this.micstate[channel].ticker !== undefined) this.micstate[channel].ticker.destroy();
+    Object.assign(micstate[channel], {taken: false, client: '', token: '', connected:false, controlling: false, recording:false});
+    if (micstate[channel].ticker !== undefined) micstate[channel].ticker.destroy();
+    self.postMessage(['remove', channel]);
     
   } catch (e) {
     console.warn('Error in parsing Event Remove:', e);
-    this.colour = 'led-red';
-    this.state = 'Error:D';
-    this.target = `Error-${this.target}`;  //Just continue where we left off
+    self.postMessage(['state','Error:D']);
   }
 }
-_eventStatus(e) {
+const eventStatus = (e) => {
   try {
+    const initialMicsLength = mics.length;
     const status = JSON.parse(e.data);
     for (const mic in status) {
-      if (this.mic.length === 0) {
-        this.mic = mic;
+      if (currentMic.length === 0) {
+        currentMic = mic;
+        self.postMessage(['changeMic', currentMic]);
       }
-      if (this.micstate[mic] === undefined) {
-        this.micstate[mic] = {};
-        Object.assign(this.micstate[mic],{
+      if (micstate[mic] === undefined) {
+        micstate[mic] = {};
+        Object.assign(micstate[mic],{
           //initial defaults
           mode: 'Monitor',
           controlling: false,
@@ -158,48 +151,179 @@ _eventStatus(e) {
 
       } else {
         if (status[mic].name.length === 0) delete status[mic].name; //don't overwrite a name with blank once we have captured it.
-        const controlling = status[mic].taken && status[mic].client === this.subscribeid.toString();
-        const update = {controlling: controlling};
-        if (this.micstate[mic].target === 'Close') {
-          //this is the first status message since we closed
-          update.target = 'Monitor';
-        }
-        if (status[mic].connected && !status[mic].taken && this.micstate[mic].state === 'Await R') {
-          //we are waiting for a release
-          update.state = 'Req Ctl';
-        }
-        Object.assign(this.micstate[mic], status[mic], update);
-        if (!controlling && this.micstate[mic].ticker !== undefined) this.micstate[mic].ticker.destroy(); 
+        const controlling = status[mic].taken && status[mic].client === subscribeid.toString();
+        Object.assign(micstate[mic], status[mic], {controlling: controlling});
+        if (!controlling && micstate[mic].ticker !== undefined) micstate[mic].ticker.destroy(); 
 
       }
       const micU = mic.charAt(0).toUpperCase() + mic.substring(1);
-      if(!this.mics.find(aMic => micU === aMic)) {
-        this.mics.push(micU);
+      if(!mics.find(aMic => micU === aMic)) {
+        mics.push(micU);
       }
-      if(this.mic === mic) {
-        this.connected = this.micstate[mic].connected;
-        this.micname = this.micstate[mic].name;
-        this.controlling = this.micstate[mic].controlling;
-        if (status[mic].connected && !status[mic].taken  && this.state === 'Await R') this.state = 'Req Ctl';
+      if (currentMic.length === 0) {
+        currentMic = mic;
+        micChange(currentMic);
+      } else if(currentMic === mic) {
+        self.postMessage(['status', {
+          connected: micstate[mic].connected,
+          name: micstate[mic].name,
+          controlling: micstate[mic].controlling,
+       }]);
       }
-      this._altMic();
     }
-
+    if (initialMicsLength !== mics.length) {
+      self.postMessage(['newMics', mics]);
+    }
   } catch (e) {
     console.warn('Error in parsing Event Status:', e);
-    this.colour = 'led-red';
-    this.state = 'Error:S';
-    this.target = `Error-${this.target}`;  //Just continue where we left off
+    self.postMessage(['state', 'Error:S'])
   }
 }
 
+const eventTake = (e) => {
+  try {
+    const {channel,client} = JSON.parse(e.data);
+    const controlling = (client === subscribeid.toString());
+    Object.assign(micstate[channel], {client:client, taken: true, controlling: controlling});
+    if (channel === currentMic) {
+      self.postMessage(['control', controlling]);
+    } 
+  } catch (err) {
+    console.warn('Error in parsing Event Remove:', err);
+    self.postMessage(['state', 'error:T']);
+  }
+
+}
 
 
+const loudReset = () => {
+  const mic = currentMic
+  if (micstat[mic].controlling && !micstat[mic].recording) {
 
-const eventSrc = new EventSource(`/api/${subscribeid}/status`);
-eventSrc.addEventListener('add', eventAdd);
-eventSrc.addEventListener('close', eventClose);
-eventSrc.addEventListener('release', eventRelease);
-eventSrc.addEventListener('remove', eventRemove);
-eventSrc.addEventListener('status', eventStatus);
-eventSrc.addEventListener('take', eventTake);     
+    callApi('reset',mic, micstate[mic].token).then(({state, timer}) => {
+      if (state && mic === currentMic) {
+        self.postMessage(['seconds', timer]);
+      }
+    });
+  }
+
+}
+
+const micChange = (newMic) => {
+  const old = currentMic;
+  currentMic = newMic;
+  console.group('Mic Change');
+  console.log('From ', old ,' To ', currentMic);
+  self.postMessage(['micChange',{
+    connected: micstate[currentMic].connected,
+    name: micstate[currentMic].name,
+    controlling: micstate[currentMic].controlling,
+    recording: micstate[currentMic].recording,
+    mode: 
+
+  }])
+   connected = micstate[currentMic].connected;
+  controlling = micstate[currentMic].controlling;
+  recording = micstate[currentMic].recording;
+  mode = micstate[currentMic].mode;
+  filename = micstate[currentMic].filename;
+  console.log('To Mode ',mode, ' Connected ', connected, 
+  ' Controlling ', controlling, ' Recording ', recording, ' Filename ', filename );
+  console.log('State from ', state, ' to ',micstate[currentMic].state);
+  console.log('Target from ', target,' to ', micstate[currentMic].target );
+  console.groupEnd()
+  state = micstate[currentMic].state;
+  target = micstate[currentMic].target;
+  micname = micstate[currentMic].name;
+
+}
+
+const releaseControl = () => {
+  const mic = currentMic;
+  if (micstate[mic].ticker !== undefined) micstate[mic].ticker.destroy();
+  callApi('release', mic, micstate[mic].token).then(({state}) => {
+    if (state) {
+      if (mic === currentMic) {
+        self.postMessage(['release', mic]);
+      }
+      Object.assign(this.micstate[mic], {taken: false, client: '', controlled: false})
+    } else {
+      self.postMessage(['state','Error G']);
+    }
+  });
+};
+const stopRecording = () => {
+  const mic = currentMic;
+  callApi('stop', mic, micstate[mic].token).then(({state,kept}) => {
+    if (state) {
+      micstate[mic].recording = false;
+      if (!kept) micstate[mic].filename = '';
+      if (mic === currentMic) {
+        self.postMessage(['stop', kept]);
+     
+    } else {
+      this.micstate[mic].recording = false;
+      if (!(state && kept)) this.micstate[mic].filename = '';
+    }
+  }
+  });
+
+};
+
+const takeControl = () => {
+  const mic = currentMic;
+  callApi('take', mic, subscribeid).then( async ({state,token}) => {
+    if (state) {
+      Object.assign(micstate[mic], {
+        token: token, 
+        controlling: true, 
+        taken: true, 
+        client: subscribeid, 
+        ticker:  new Ticker(4*60*1000) //create a renew ticker for 4 minutes
+      });
+      if (currentMic === mic) {
+        self.postMessage(['control', true])
+      } 
+     
+      try {
+        while(true) {
+          await micstate[mic].ticker.nextTick;
+          const {state, token} = await this._callApi('renew', mic, micstate[mic].token);
+          if (state) {
+            micstate[mic].token = token;
+          } else {
+            Object.assign(this.micstate[mic], {controlling: false, token:''});
+            if (currentMic === mic) {
+              self.postMessage(['control', false]);
+        
+            } 
+            micstate[mic].ticker.destroy();
+          }
+        }
+
+      } catch(err) {
+        //someone closed the ticker
+        delete micstate[mic].ticker;
+      }
+    } else {
+      if (mic === currentMic) {
+        self.postMessage(['state','Await R']);
+      } 
+    }
+  });
+};
+
+const callApi = async (func,channel,token) => {
+  try {
+    const response = await fetch(`/api/${channel}${token? '/' + token : ''}/${func}`);
+    return await response.json(); 
+  } catch(err) {
+    console.warn('Error response to Api Request ', func , ' channel ', channel, ' token ', token, ':' , err);
+    self.postMessage(['state','Error:C']);
+
+  }
+  return {state: false};
+};
+
+
+  
