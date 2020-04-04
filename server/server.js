@@ -229,18 +229,8 @@
 
           });
           const status = {
-            scarlett: {
-              connected: recorders.scarlett !== undefined,
-              taken: recorders.scarlett !== undefined ? recorders.scarlett.controlled : false,
-              channel: recorders.scarlett !== undefined && recorders.scarlett.controlled ? recorders.scarlett.channel : '',
-              name: recorders.scarlett !== undefined ? recorders.scarlett.name : ''
-            },
-            yeti: {
-              connected: recorders.yeti !== undefined,
-              taken: recorders.yeti !== undefined ? recorders.yeti.controlled : false,
-              channel: recorders.yeti !== undefined && recorders.yeti.controlled ? recorders.yeti.channel : '',
-              name: recorders.yeti !== undefined ? recorders.yeti.name : ''
-            }
+            scarlett: recorders.scarlett !== undefined? recorders.scarlett.status : {connected: false},
+            yeti: recorders.yeti !== undefined? recorders.yeti.status :{connected: false}
           };
           sendStatus('status', status, response);
 
@@ -261,36 +251,16 @@
       }
 
       const status = {
-        scarlett: {
-          connected: recorders.scarlett !== undefined,
-          taken: recorders.scarlett !== undefined ? recorders.scarlett.controlled : false,
-          client: recorders.scarlett !== undefined && recorders.scarlett.controlled ? recorders.scarlett.client : '',
-          name: recorders.scarlett !== undefined ? recorders.scarlett.name : ''
-        },
-        yeti: {
-          connected: recorders.yeti !== undefined,
-          taken: recorders.yeti !== undefined ? recorders.yeti.controlled : false,
-          client: recorders.yeti !== undefined && recorders.yeti.controlled ? recorders.yeti.client : '',
-          name: recorders.yeti !== undefined ? recorders.yeti.name : ''
-        }
+        scarlett: recorders.scarlett !== undefined? recorders.scarlett.status : {connected: false},
+        yeti: recorders.yeti !== undefined? recorders.yeti.status :{connected: false}
       };
-      sendStatus('status', status);
+  sendStatus('status', status);
       statusTimer = setInterval(() => {
         const status = {
-          scarlett: {
-            connected: recorders.scarlett !== undefined,
-            taken: recorders.scarlett !== undefined ? recorders.scarlett.controlled : false,
-            client: recorders.scarlett !== undefined && recorders.scarlett.controlled ? recorders.scarlett.client : '',
-            name: recorders.scarlett !== undefined ? recorders.scarlett.name : ''
-          },
-          yeti: {
-            connected: recorders.yeti !== undefined,
-            taken: recorders.yeti !== undefined ? recorders.yeti.controlled : false,
-            client: recorders.yeti !== undefined && recorders.yeti.controlled ? recorders.yeti.client : '',
-            name: recorders.yeti !== undefined ? recorders.yeti.name : ''
-          }
+          scarlett: recorders.scarlett !== undefined? recorders.scarlett.status : {connected: false},
+          yeti: recorders.yeti !== undefined? recorders.yeti.status :{connected: false}
         };
-        sendStatus('status', status);
+      sendStatus('status', status);
     
       }, 90000);
 

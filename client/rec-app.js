@@ -50,7 +50,9 @@ class RecApp extends LitElement {
       loudness: {type: String}, //Last integrated loudness received from recorder in fixed(1) format for luFS
       leftpeak: {type: String}, //Last peak left channel in fixed(1) format for dbFS
       rightpeak: {type: String}, //Last peak right channel in fixed(1) format for dbFS
-      seconds: {type: Number}  //Seconds since loudness last reset
+      seconds: {type: Number},  //Seconds since loudness last reset
+      code: {type: String},      //Error Code if there is one
+      taken: {type: Boolean}
     };
   }
   constructor() {
@@ -61,6 +63,7 @@ class RecApp extends LitElement {
     this.micname = '';
     this.mics = [];
     this.modes = ['Monitor', 'Control'];
+    this.code = '';
     this.mic = '';
     this.mode = 'Control';   //when we start up we want to take control if we can
     this.colour = 'led-red';
@@ -69,7 +72,7 @@ class RecApp extends LitElement {
     this.filename = '';
     this.loudness = this.leftpeak = this.rightpeak = '-70.0';
     this.seconds = 0;
-
+    this.taken = false; 
     this.timer = 0;
     this._statusMessage = this._statusMessage.bind(this);
     this._unload = this._unload.bind(this);
@@ -160,7 +163,7 @@ class RecApp extends LitElement {
             show were we are going next
           */
           const mic = this.mic; 
-          const nextTarget = this.target.replace(/^Error-(.*)$/,'$1');
+          const nextTarget = this.target.replace(/^error-(.*)$/,'$1');
           console.log('Change target to ', nextTarget, ' in 5 seconds');
           setTimeout(() =>{
             if (mic === this.mic) {
@@ -185,14 +188,17 @@ class RecApp extends LitElement {
           this.connected = false;
           break;
         case 'Initialise':
-          this._sendCmd('start');
+          //We don't do anything here, as the first status meesage will take us out of this state
           break;
         case 'No Mic':
           if (this.target === 'Close') {
-            this.state = 'Close';
+            this.state = 'Closed';
           } else if (this.connected) {
             this.state = 'Monitor';
-          } else this._altMic();
+          } else {
+            this.colour = 'led-red';
+            this.seconds = 0;
+          }
           if (this.timer !== 0) {
             console.log('stopping second timer')
             clearInterval(this.timer);
@@ -204,15 +210,14 @@ class RecApp extends LitElement {
               this.state = 'No Mic';
             } else {
               this.colour = 'led-yellow';
-              //Don't overwrite a genuine filename, but if the alt mic text was there clear it
-              if(changed.get('state')  === 'No Mic' && this.filename.slice(-5) !== '.flac') this.filename = '';
               if(this.target === 'Control' || this.target === 'Record') {
-                this.state = 'Req Ctl';
+                if (this.taken && !this.controlling) {
+                  this.state = 'Await R';
+                } else {
+                  this.state = 'Req Ctl';
+                }
               } else {
-                const mic = this.mic
-                this._callApi('timer',this.mic).then(({time}) => {
-                  if (mic === this.mic) this.seconds = time;
-                });
+                this._getTimer();
               }
               if (this.timer === 0) {
                 console.log('starting second timer');
@@ -224,7 +229,7 @@ class RecApp extends LitElement {
           if (!this.connected) {
             this.state = 'No Mic'
           } else if (this.controlling) {
-            this._releaseControl()
+            this._sendCmd('give');
           } else {
             this.state = 'Monitor';
           }
@@ -233,7 +238,7 @@ class RecApp extends LitElement {
           if (!this.connected) {
             this.state = 'No Mic'
           } else if (!this.controlling) {
-            this._takeControl();
+            this._sendCmd('take');
           } else {
             this.state = 'Control';
           }
@@ -242,51 +247,31 @@ class RecApp extends LitElement {
           //con't do anything until we get a release status message
           break;
         case 'Control' :
-          this.colour = 'led-blue';
+          
           if (!this.controlling) {
             console.log('Change to Control but not controlling');
-            this.state = 'Error:T';
-            this.target = 'Error-Monitor';
+            this.state = 'Error';
+            this.code = 'NoCtl'
+          } else {
+            this.colour = 'led-blue';
+            if (this.timer === 0) {
+              console.log('starting second timer');
+              this.timer = setInterval(() => this.seconds++, 1000);
+            }
+            //go get the time, because we might have transitioned from recording to here,
+            this._getTimer();
           }
-          if (this.timer === 0) {
-            console.log('starting second timer');
-            this.timer = setInterval(() => this.seconds++, 1000);
-          }
-          //go get the time, because we might have transitioned from recording to here,
-          const mic = this.mic
-          this._callApi('timer',this.mic).then(({time}) => {
-            if (mic === this.mic) this.seconds = time;
-          });        
-
       break;
         case 'Req Stp':
           if (!this.recording) {
-            console.log('Stop Requested but not reccording')
-            this.state = 'Error:S';
-            this.target = 'Error-Control';
+            this.state = 'Control';
           } else {
-            this._stopRecording();
+            this._sendCmd('stop');
           }
           break;
         case 'Req Rec' :
           if (!this.recording) {
-            const mic = this.mic;
-            this.colour = 'led-blue';
-            this._callApi('start', mic, this.micstate[mic].token).then(({state,name}) => {
-              if (state) {
-                if (this.mic === mic) {
-                  this.filename = name;
-                  this.recording = true;
-                  this.state = 'Record';
-                } else Object.assign(this.micstate[this.mic], {state:'Record',filename: name, recording: true});
-              } else {
-                console.log('State Change failure to start recording');
-                if (this.mic === mic) {
-                  this.state = 'Error:R';
-                  this.target = 'Error-Record';
-                } else this.micstate[this.mic].state = 'Control';
-              }
-            });
+            this._sendCmd('record');
           } else {
             this.state = 'Record';
           }
@@ -295,13 +280,10 @@ class RecApp extends LitElement {
           if (!this.recording) {
 
             console.log('Record but no recording');
-            this.state = 'Error:R';
-            this.target = 'Error-Control';
+            this.state = 'Error';
+            this.code = 'NoRec'
           } else {
-            const mic = this.mic
-            this._callApi('timer',this.mic).then(({time}) => {
-              if (mic === this.mic) this.seconds = time;
-            });        
+            this._getTimer();
           }
           if (this.timer === 0) {
             console.log('starting second timer');
@@ -315,73 +297,71 @@ class RecApp extends LitElement {
             we lead the way out
           */
           this.colour='led-red';
+          this.target = `error-${this.target}`;
       }
       console.groupEnd();
     } 
+
     if (changed.has('connected') && changed.get('connected') !== undefined) {
+      console.log('Connected changed to ', this.connected);
       if (this.connected && this.state === 'No Mic') this.state = 'Monitor';
       if (!this.connected && this.state !== 'Closed' && this.state !== 'Initialise') this.state = 'No Mic';
     }
-    if (changed.has('mode') && this.mode.length > 0) {
-      if (this.target !== 'Initialise') {
-        if (this.mode === 'Monitor') {
-          this.target = 'Monitor';
-        } else if (this.target === 'Monitor') {
-          this.target = 'Control';
-        }
-      }
+
+    if(changed.has('taken') && changed.get('taken') !== undefined) {
+      console.log('Taken has changed to ', this.taken);
+      if (this.state === 'Await R' && !this.taken) this.state = 'Monitor';
     }
+
     if (changed.has('controlling') && changed.get('controlling') !== undefined) {
+      console.log('Controlling Changed to ', this.controlling);
       if (this.controlling) {
         if (this.state === 'Req Ctl') this.state = 'Control';
       } else {
         if (this.recording) {
           this.recording = false; //this will reset the state or error
-        } else if (this.state === 'Req Rel') {
+          this.state = 'Error'
+          this.code = 'NoCtl';
+        } else  {
           this.state = 'Monitor';
-        } else if (this.state !== 'Monitor' && this.state !== 'No Mic' && this.state !== 'Close') {
-          console.log('Controlling Change, Error because state is ', this.state);
-          this.state = 'Error:C';
-          this.target = 'Error-Monitor';
         }
-      }
-      
+      }  
     }
 
     if(changed.has('recording') && changed.get('recording') !== undefined) {
+      console.log('Recording Changed to ', this.recording);
       if (this.recording) {
         if (!this.controlling) {
           console.log('Recording Change to on, error because controlling not set')
-          this.state = 'Error:R';
-          this.target = 'Error-Monitor';
+          this.state = 'Error';
+          this.code = 'NoCtl';
         } else {
           this.state = 'Record';
+          this.seconds = 0;
         }
       } else if (this.controlling) {
-          if (this.state === 'Req Stp' || this.state === 'Control') {
-            this.state = 'Control'
-          } else {
-            this.state = 'Error:S';
-            this.target = 'Error-Control';
-          }
-      } else if (this.state !== 'No Mic' && this.state !== 'Monitor' && this.state !== 'Close') {
-        console.log('Recording Change - Error because not recording or controlling but state is ', this.state);
-        this.state = 'Error:S';
-        this.target('Error-Monitor')
+          this.state = 'Control'
+      } else {
+          this.state = 'Monitor';  
       }
     }
 
+    if (changed.has('mode') && this.mode.length > 0) {
+      console.log('Mode changed to ', this.mode);
+      if (this.mode === 'Monitor') {
+        this.target = 'Monitor';
+      } else if (this.target !== 'Record') {  //Only record stays were it is
+        this.target = 'Control';
+      }
+      if (this.mic.length > 0) this.worker.postMessage(['mode', this.mode]);
+    }
 
     if(changed.has('mic') && this.mic.length > 0) {
-      this._altMic(); //check for alt mic just to be safe.
+      console.log('Mic change to ', this.mic);
+      //tell web worker about the mode, as we didn't before mic was set.
+      if (changed.get('mic').length === 0) this.worker.postMessage(['mode', this.mode]);
       //Just make sure we have the time if the new mic is connected
-      if(this.connected) {
-        const mic = this.mic
-        this._callApi('timer',this.mic).then(({time}) => {
-          if (mic === this.mic) this.seconds = time;
-        });        
-      }
-
+      if(this.connected) this._getTimer();
     }  
     
     super.updated(changed);
@@ -474,7 +454,7 @@ class RecApp extends LitElement {
         <round-switch title="Mode" id="mode" ?locked=${this.recording || (!this.connected && this.mode === 'Monitor')} .choices=${this.modes} .selected=${this.mode} @selection-change=${this._modeChange}></round-switch>
         <round-switch title="Mic" id="mic" .choices=${this.mics} .selected=${this.mic} @selection-change=${this._micChange}></round-switch>
         <rec-lcd
-          .alt=${!this.connected} 
+          .alt=${!this.connected && this.filename.slice(-5) !== '.flac'} 
           .channel=${this.micname}
           .state=${this.state}
           .filename=${this.filename}
@@ -482,6 +462,7 @@ class RecApp extends LitElement {
           .leftpeak=${this.leftpeak}
           .rightpeak=${this.rightpeak}
           .seconds=${this.seconds}
+          .code=${this.code}
         ></rec-lcd>
         <rec-volume id="volume" .channel=${this.connected ? this.mic:''} @loudness-change=${this._newLoudness}></rec-volume>
       </div>
@@ -491,11 +472,6 @@ class RecApp extends LitElement {
       </div>
     `;
   }
-  _altMic() {
-    if (this.state === 'No Mic') {
-      this._sendCmd('altmic');
-    }
-  }
 
   _downloadCert() {
     this.link.setAttribute('href', '/assets/akc-crt.pem');
@@ -503,8 +479,6 @@ class RecApp extends LitElement {
     this.link.click();
 
   }
-
-
 
   async _getTimer() {
     const mic = this.mic
@@ -514,14 +488,15 @@ class RecApp extends LitElement {
       if (mic === this.mic) this.seconds = time;
     } catch(err) {
       console.warn('Error response ', err, ' to time request');
-      this.state = 'Error:C';
-      this.target = `Error-${this.target}`;  //Just continue where we left off
+      this.state = 'Error';
+      this.code = 'Timer';
     }
   }
-
-  
+  _loudReset() {
+    if (this.controlling && !this.recording) this.worker.postMessage(['reset','']);
+  }
   _micChange(e) {
-    this.mic = e.detail.toLowerCase();
+    this.worker.postMessage(['switch',e.detail.toLowerCase()]) ;
   }
   _modeChange(e) {
     this.mode = e.detail;
@@ -543,19 +518,35 @@ class RecApp extends LitElement {
     const func = e.data[0];
     const value = e.data[1];
     switch (func) {
-      case 'state':
-        this.state = state;
+      case 'seconds':
+        this.seconds = value;
         break;
-      case 'changeMic':
-        this.mic = value;
+      case 'close':
+        this.state = 'Closed';
         break;
-      case 'newMics':
-        this.mics = value;
+      case 'error':
+        this.state = 'Fail';
+        this.code = value;
         break;
       case 'status':
+        if (this.state === 'Initialise') {
+          this.state = 'No Mic';
+        }
+        this.mic = value.mic;
+        if (value.mode === 'Unknown') {
+          this.worker.postMessage(['mode', this.mode])
+        } else {
+          this.mode = value.mode;
+        }
         this.connected = value.connected;
         this.micname = value.name;
+        this.taken = value.taken;
         this.controlling = value.controlling;
+        this.recording = value.recording;
+        this.filename = (value.alt.length > 0 && !this.connected)? value.alt: value.filename;
+        break;
+      case 'mics':
+        this.mics = value;
         break;
       default:
         console.warn('Unknown Function ', func, ' received from worker');

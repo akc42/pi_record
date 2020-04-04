@@ -36,11 +36,11 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
   class Recorder {
     constructor(device, fmt, name) {
       logger('rec',`recorder ${name} created`);
+      this._basename = '';
       this._device = device;
       this._name = name;
       this._controlled = '';
       this._fmt = fmt;
-      this._isRecording = false;
       this._subscribers = [];
       this._sed = spawn('sed', sedargs, {
         cwd: path.resolve(__dirname, '../'),
@@ -57,9 +57,9 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
         }
       });
       this._sedPromise = new Promise(resolve => this._sedreader.on('close', () => {
-        debug('in recorder ' ,this.name, ' closing down sed, so unsubscribe volume listeners');
+        debug('in recorder ' ,this._name, ' closing down sed, so unsubscribe volume listeners');
         for (let response of this._subscribers) {
-          debug(this.name, ' sending subscriber a close event');
+          debug(this._name, ' sending subscriber a close event');
           response.write(`event: close\ndata: '{}'\n\n`);  //special event to tell our subscribers to go away
         }
         resolve();
@@ -97,11 +97,16 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
         return false;
       }
     }
-    get client () {
-      return this._client
-    }
-    get isRecording() {
-      return this._recording !== undefined;
+
+    get status () {
+      return {
+        connected: true,
+        name: this._name,
+        taken: this.controlled,
+        client: this._client,
+        recording : this._recording !== undefined,
+        file: this._basename
+      };
     }
     get timer() {
       return Math.floor((Date.now() - this._timerStart)/1000);
@@ -121,12 +126,12 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
       };
       this._controlled = jwt.encode(payload,process.env.RECORDER_TOKEN);
       this._client = client;
-      debug(`Recorder ${this.name} made a new token`);
+      debug(`Recorder ${this._name} made a new token`);
       return this._controlled;
     }
     _startVolume() {
       const args = volargs.replace('hw:dddd', 'hw:' + this._device).replace(/s32le/g,this._fmt).split(' ');
-      debug(`Recorder ${this.name} starting volume generation`);
+      debug(`Recorder ${this._name} starting volume generation`);
       this._volume = spawn('ffmpeg', args, {
         cwd: path.resolve(__dirname, '../'),
         stdio: ['pipe', 'ignore', 'pipe']
@@ -134,15 +139,15 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
       this._volume.stderr.pipe(this._sed.stdin, {end: false});  //send the output throught the sed filter and out to listener 
       this._timerStart = Date.now();
       this._volumePromise = new Promise(resolve => this._volume.once('exit', (code, signal) => {
-        debug('Recorder ', this.name, ' volume production ended');
+        debug('Recorder ', this._name, ' volume production ended');
         delete this._volume;
-        if (code !== 0 && code !== 255) logger('error', `recorder ${this.name} volume stream ended prematurely with code ${code}`);
+        if (code !== 0 && code !== 255) logger('error', `recorder ${this._name} volume stream ended prematurely with code ${code}`);
         resolve(); 
       }));      
     }
     async _stop() {
       //internal function to stop recording
-      if (this.isRecording) {
+      if (this._recording !== undefined) {
         const s = new Semaphore();
         await s.start();  //make sure we are not switching over right now
         this._recording.stderr.unpipe(); //disconnect from the volume filter
@@ -150,17 +155,17 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
         const filekept = await this._recordingPromise;
         this._startVolume();  //go back to plain volume output
         s.end();
-        logger('rec', `recorder ${this.name} stopped recording`);
+        logger('rec', `recorder ${this._name} stopped recording`);
         return {state: true, kept: filekept};
       }
       return {state:false};
    
     }
     async close() {
-      debug('Recorder ',this.name, ' received close request whilst volume production is ', this._volume !== undefined, ' and recording is ', this._recording !== undefined);
+      debug('Recorder ',this._name, ' received close request whilst volume production is ', this._volume !== undefined, ' and recording is ', this._recording !== undefined);
       const s = new Semaphore();
       await s.start();
-      if (this.isRecording) {
+      if (this._recording !== undefined) {
 
         this._recording.stderr.unpipe(); //disconnect from the volume filter
         this._recording.stdin.end('q'); //write this to end the recording
@@ -172,22 +177,22 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
       this._sed.stdin.end();
       await this._sedPromise;
       s.end();
-      logger('rec', `recorder ${this.name} closed`)
+      logger('rec', `recorder ${this._name} closed`)
     }
     async record(token) {
-      debug('Recorder ', this.name ,' request to start recording')
+      debug('Recorder ', this._name ,' request to start recording')
       if(this._checkToken(token)) { //only a valid token will allow us to start
-        if (!this.isRecording ) {
+        if (this._recording === undefined ) {
           const s = new Semaphore();
           await s.start();
           this._volume.stderr.unpipe();
           this._volume.stdin.end('q');
           await this._volumePromise;
           const rightnow = new Date();
-          const basename = this.name.charAt(0) + '_' + rightnow.toISOString().substring(8,18).replace(/T|:/g,'') + '.flac';
-          const filename = `${process.env.RECORDER_RECORDINGS}/${basename}`;
+          this._basename = this._name.charAt(0) + '_' + rightnow.toISOString().substring(8,18).replace(/T|:/g,'') + '.flac';
+          const filename = `${process.env.RECORDER_RECORDINGS}/${this._basename}`;
           const args = recargs.replace('hw:dddd', 'hw:' + this._device).replace(/s32le/g,this._fmt).replace('recordings/out.flac',filename).split(' ');
-          debug('Recorder ', this.name, ' starting recording');
+          debug('Recorder ', this._name, ' starting recording');
           this._recording = spawn('ffmpeg', args, {
             cwd: path.resolve(__dirname, '../'),
             stdio: ['pipe', 'ignore', 'pipe']
@@ -195,44 +200,47 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
           this._timerStart = Date.now();
           this._recording.stderr.pipe(this._sed.stdin, {end: false});
           this._recordingPromise = new Promise(resolve => this._recording.once('exit', async (code,signal) => {
-            debug('recording for ', this.name, ' exited');
-            if (code !== 0 && code !== 255) logger('error', `recorder ${this.name} recording ended prematurely with code ${code}`);
+            debug('recording for ', this._name, ' exited');
+            if (code !== 0 && code !== 255) logger('error', `recorder ${this._name} recording ended prematurely with code ${code}`);
 
             const timeLimit = parseInt(process.env.RECORDER_TIME_LIMIT,10);
             const kept = (this.timer > timeLimit);
-            if (!kept) await fs.unlink(path.resolve(__dirname,'../', filename)); //delete the recording because it is too short
-            debug('Recorder', this.name, ' recording kept is ', kept);
+            if (!kept) {
+              this._basename = '';
+              await fs.unlink(path.resolve(__dirname,'../', filename)); //delete the recording because it is too short
+            }
+            debug('Recorder', this._name, ' recording kept is ', kept);
             delete this._recording;
             resolve(kept);
           }));
           s.end();
-          logger('rec', `recorder ${this.name} recording ${filename}`);
-          return {state: true, name: basename}; 
+          logger('rec', `recorder ${this._name} recording ${filename}`);
+          return {state: true, name: this._basename}; 
         }
       }
-      debug('Recorder ', this.name, ' request to start recording failed');
+      debug('Recorder ', this._name, ' request to start recording failed');
       return {state: false};
     }
     async release(token) {
-      debug('Recorder ', this.name, ' request to release control');
+      debug('Recorder ', this._name, ' request to release control');
       if (this._checkToken(token)) {
-        if (this.isRecording) await this.stop(token);
+        if (this._recording !== undefined) await this.stop(token);
         this._controlled = '';
         this._channel = '';
-        logger('rec', `recorder ${this.name} control released`);
+        logger('rec', `recorder ${this._name} control released`);
         return true;
       }
       return false;
 
     }
     renew(token) {
-      debug('Recorder ', this.name, ' request to renew token');
+      debug('Recorder ', this._name, ' request to renew token');
       if (this._checkToken(token)) return {state: true, token: this._makeToken(this.client)};
-      logger('rec', `recorder ${this.name} failed to renew, so control released`);
+      logger('rec', `recorder ${this._name} failed to renew, so control released`);
       return {state: false };
     }
     async stop(token) {
-      debug(`Recorder ${this.name} request to stop recording after ${this.timer} secs`);
+      debug(`Recorder ${this._name} request to stop recording after ${this.timer} secs`);
       if (this._checkToken(token)) {
         return await this._stop();
       }
@@ -240,11 +248,11 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
     }
     async reset(token) {
 
-      debug(`Recorder ${this.name} request to reset loudness`);
+      debug(`Recorder ${this._name} request to reset loudness`);
       //we do that by stopping and restarting ffmpeg - but only if it is not recording.
       if (this._checkToken(token)) {
-        if (this.isRecording) {
-          debug(`Recorder ${this.name} failed to reset because of Currently Recording`);
+        if (this._recording !== undefined) {
+          debug(`Recorder ${this._name} failed to reset because of Currently Recording`);
           return {state: false, reason: 'Currently Recording'};
         }
         const s = new Semaphore();
@@ -256,24 +264,24 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
         s.end();
         return {state: true, timer: this.timer};
       } else {
-        debug(`Recorder ${this.name} failed to reset because of Invalid Token`);
+        debug(`Recorder ${this._name} failed to reset because of Invalid Token`);
         return {state:false, reason: 'Invalid Token'};
       }
     }
     subscribe(response) {
-      debug(`Recorder ${this.name} request to subscribe by no ${this._subscribers.length}  after ${this.timer} seconds`);
+      debug(`Recorder ${this._name} request to subscribe by no ${this._subscribers.length}  after ${this.timer} seconds`);
       this._subscribers.push(response);
     }
     take(client) {
-      debug(`Recorder ${this.name } request to take control request by client ${client}`);
+      debug(`Recorder ${this._name } request to take control request by client ${client}`);
       if (this.controlled) return {state: false,client: this._client};
       const token = this._makeToken(client);
-      logger('rec', `recorder ${this.name} control taken by ${client}`);
+      logger('rec', `recorder ${this._name} control taken by ${client}`);
       return {state: true, token: token};
     }
     unsubscribe(response) {
       const idx = this._subscribers.indexOf(response);
-      debug(`Recorder ${this.name} request to unsubscribe by subscriber no ${idx} after ${this.timer} seconds`);
+      debug(`Recorder ${this._name} request to unsubscribe by subscriber no ${idx} after ${this.timer} seconds`);
       if (idx >= 0) {
         this._subscribers.splice(idx,1);  //delete the entry
       }

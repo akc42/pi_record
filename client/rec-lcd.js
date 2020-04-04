@@ -33,11 +33,13 @@ class RecLcd extends LitElement {
       FILE_START: 20,
       FILE_LENGTH: 20,
       TIME_START: 80,
-      TIME_LENGTH: 20,
+      TIME_LENGTH: 14,
       LOUD_START: 40,
       LOUD_LENGTH: 20,
       PEAK_START: 60,
-      PEAK_LENGTH: 20
+      PEAK_LENGTH: 20,
+      CODE_START: 95,
+      CODE_LENGTH: 5
     };
   }
   static get properties() {
@@ -50,7 +52,8 @@ class RecLcd extends LitElement {
       leftpeak: {type: String},
       rightpeak: {type: String},
       alt: {type: Boolean},
-      seconds: {type: Number}
+      seconds: {type: Number},
+      code:{type: String} //error code
     };
   }
   constructor() {
@@ -62,6 +65,7 @@ class RecLcd extends LitElement {
     this.loudness = '';
     this.leftpeak = '';
     this.rightpeak = '';
+    this.code = '';
     this.alt = false;
     this.seconds = 0;
     this.minutes = 0;
@@ -142,11 +146,11 @@ class RecLcd extends LitElement {
       this.screen.writeString(this.state.substr(0,RecLcd.constants.STATE_LENGTH),RecLcd.constants.STATE_START);
       const file = this.filename.length > 0 ? `${this.alt? 'Alt Mic': 'File'}: ${this.filename}`.substr(0,RecLcd.constants.FILE_LENGTH) : ''
       this.screen.writeString(file,RecLcd.constants.FILE_START);
-      if (!this.alt) {
+      if (!this.alt && this.seconds > 0) {
         const seconds = this.seconds % 60;
         const minutes = Math.floor(this.seconds/60) % 60;
         const hours = Math.floor(Math.floor(this.seconds/60)/60) % 24;
-        let timeString = 'Since: ' + (hours === 0? '  ' : ('0' + hours.toString()).slice(-2) + ':');
+        let timeString = 'Since:' + (hours === 0? '  ' : ('0' + hours.toString()).slice(-2) + ':');
         timeString += ('0' + minutes.toString()).slice(-2) + ':' + ('0' + seconds.toString()).slice(-2);
         this.screen.writeString(timeString.substr(0,RecLcd.constants.TIME_LENGTH),RecLcd.constants.TIME_START);
       }
@@ -155,6 +159,7 @@ class RecLcd extends LitElement {
       const peak = this.leftpeak.length > 0 || this.rightpeak.length > 0 ?
         `Pk: ${this.leftpeak.substr(0,5).padStart(5,' ')} ${this.rightpeak.substr(0,5).padStart(5,' ')} dbFS`.substr(0,RecLcd.constants.PEAK_LENGTH) : '';
       this.screen.writeString(peak, RecLcd.constants.PEAK_START);
+      this.screen.writeString(this.code.substr(0,RecLcd.constants.CODE_LENGTH),RecLcd.constants.CODE_START);
       this.animationInProgress = false;
     });
   }

@@ -21,36 +21,95 @@
 
 importScripts('./ticker.js');
 
-const subscribeid = Date.now();  //create a unique (good enougjt)
+const subscribeid = Date.now().toString();  //create a unique (good enough) id
 const micstate = {};
 let currentMic = '';
+let altMic = '';
 const mics = [];
-let EventSrc;
+
+
 
 
 onmessage = function(e) {
   console.group('Status Worker Message');
   const func = e.data[0];
-  const mic = e.data[1];
-  console.log('Function: ', func, ' with Value ', mic);
+  const value = e.data[1];
+  console.log('Function: ', func, ' with Value ', value);
   switch(func) {
-    case 'start':
-      eventSrc = new EventSource(`/api/${subscribeid}/status`);
-      eventSrc.addEventListener('add', eventAdd);
-      eventSrc.addEventListener('close', eventClose);
-      eventSrc.addEventListener('release', eventRelease);
-      eventSrc.addEventListener('remove', eventRemove);
-      eventSrc.addEventListener('status', eventStatus);
-      eventSrc.addEventListener('take', eventTake);   
+    case 'mode':
+      if (currentMic.length > 0) micstate[currentMic].mode = value;
       break;
-      case 'newMic' :
-
+    case 'take':
+      if (!micstate[currentMic].taken) {
+        takeControl();
+      } else {
+        sendError('Take');
+      }
+      break;
+    case 'give':
+      if (micstate[currentMic].taken && micstate[currentMic].client === subscribeid && !micstate[currentMic].recording) {
+        releaseControl();
+      } else {
+        sendError('Give');
+      }
+      break;
+    case 'switch':
+      //check that the value received is a known mic
+      if (micstate.hasOwnProperty(value)) {
+        if (currentMic !== value) {
+          currentMic = value;
+          if (altMic.length === 0 && !micstate[currentMic].connected) {
+            for (const mic in micstate) {
+              if (mic !== currentMic && micstate[mic].connected) {
+                altMic = mic;
+                break;
+              }
+            }
+          }      
+          sendStatus();
+        }
+      } else {
+        sendError('Mic');
+      }
+      break;
+    case 'reset':
+      if (micstate[currentMic].taken && micstate[currentMic].client === subscribeid && !micstate[currentMic].recording) {
+        loudReset();
+      } else {
+        sendError('Reset');
+      }
+      break;
+    case 'record':
+      if (micstate[currentMic].taken && micstate[currentMic].client === subscribeid && !micstate[currentMic].recording) {
+        startRecording();
+      } else {
+        sendError('Record');
+      }
+      break;
+    case 'stop':
+      if (micstate[currentMic].taken && micstate[currentMic].client === subscribeid && micstate[currentMic].recording) {
+        stopRecording();
+      } else {
+        sendError('Stop');
+      }
+      break; 
     default:
       console.warn('Web Worker received unknown function ', func);
   }
   console.groupEnd();
 
 }
+const callApi = async (func,channel,token) => {
+  try {
+    const response = await fetch(`/api/${channel}${token? '/' + token : ''}/${func}`);
+    return await response.json(); 
+  } catch(err) {
+    console.warn('Error response to Api Request ', func , ' channel ', channel, ' token ', token, ':' , err);
+    self.postMessage(['error','Comms']);
+
+  }
+  return {state: false};
+};
  
 
 
@@ -60,7 +119,6 @@ const eventAdd = (e) => {
     const {channel, name} = JSON.parse(e.data);
     if (currentMic.length === 0) {
       currentMic = channel;
-      self.postMessage(['changeMic', currentMic]);
     }
     if (micstate[channel] === undefined) {
       micstate[channel] = {
@@ -68,12 +126,9 @@ const eventAdd = (e) => {
         taken: false, 
         token: '', 
         client: '',
-        controlling: false, 
         name: name,
         mode: 'Unknown',
         recording: false, 
-        state : 'Unknown', 
-        target : 'Unknown',
         filename: ''
       }
       const micU = channel.charAt(0).toUpperCase() + channel.substring(1);
@@ -82,37 +137,35 @@ const eventAdd = (e) => {
       }
     } else Object.assign(micstate[channel],{connected: true, name: name});
     if (initialMicsLength !== mics.length) {
-      self.postMessage(['newMics', mics]);
+      self.postMessage(['mics', mics]);
     }
-    if (currentMic === channel) {
-      self.postMessage(['connect', name]);
-    } 
-
+    if (altMic.length === 0 && currentMic !== channel && !micstate[currentMic].connected) altMic = channel;
+    sendStatus();
   } catch (e) {
     console.warn('Error in parsing Event Add:', e);
-    self.postMessage(['state', 'Error:A']);
+    sendError('Add');
   }
 }
 
 
 const eventClose = () => {
   //the server is closing down, so reset everything to wait for it to come up again
-  self.postMessage(['close', 0]);
-  for (const mic in this.micstate) {
-    Object.assign(this.micstate[mic], {target: 'Close', State: 'Close', recording: false, contolling: false, connected: false});
+  for (const mic in micstate) {
+    Object.assign(micstate[mic], {taken: false , recording: false, contolling: false, connected: false});
     if (micstate[mic].ticker !== undefined) micstate[mic].ticker.destroy();
     delete micstate[mic].ticker;
   }
+  self.postMessage(['close', '']);
  }
 const eventRelease = (e) => {
   try {
     const {channel} = JSON.parse(e.data);     
     Object.assign(micstate[channel], {taken :false, client: '', token:'', controlling: false, recording: false});
     if (micstate[channel].ticker !== undefined) micstate[channel].ticker.destroy();
-    self.postMessage(['release', channel]);
+    sendStatus
   } catch (e) {
     console.warn('Error in parsing Event Release:', e);
-    self.postMessage(['state', 'Error:G']);
+    sendError('Rlse')
   }
 }
 const eventRemove = (e) => {
@@ -120,39 +173,54 @@ const eventRemove = (e) => {
     const {channel} = JSON.parse(e.data);
     Object.assign(micstate[channel], {taken: false, client: '', token: '', connected:false, controlling: false, recording:false});
     if (micstate[channel].ticker !== undefined) micstate[channel].ticker.destroy();
-    self.postMessage(['remove', channel]);
-    
+    if (altMic === channel) {
+      altMic = '';
+      for (mic in micstate) {
+        if(mic !== currentMic && micstate[mic].connected) {
+          altMic = mic;
+          break;
+        }
+      }
+    }
+    sendStatus();
   } catch (e) {
     console.warn('Error in parsing Event Remove:', e);
-    self.postMessage(['state','Error:D']);
+    sendError('Rmve');
   }
 }
 const eventStatus = (e) => {
   try {
     const initialMicsLength = mics.length;
     const status = JSON.parse(e.data);
+    let possibleMic = '';
+    let firstMic = '';
     for (const mic in status) {
-      if (currentMic.length === 0) {
-        currentMic = mic;
-        self.postMessage(['changeMic', currentMic]);
+      if (firstMic.length === 0) {
+        firstMic = mic;
       }
+      if (status[mic].connected) {
+        if (possibleMic.length === 0) possibleMic = mic;
+        if (altMic.length === 0 && currentMic.length > 0 && currentMic !== mic) altMic = mic;
+       } else if (altMic === mic) altMic = '';  //no longer connected so reset altMic
       if (micstate[mic] === undefined) {
         micstate[mic] = {};
         Object.assign(micstate[mic],{
           //initial defaults
-          mode: 'Monitor',
-          controlling: false,
+          connected: false, 
+          taken: false, 
           token: '', 
+          client: '',
+          name: name,
+          mode: 'Unknown',
           recording: false, 
-          state : 'No Mic', 
-          target : 'Monitor',
           filename: ''
+  
         }, status[mic]);
 
       } else {
-        if (status[mic].name.length === 0) delete status[mic].name; //don't overwrite a name with blank once we have captured it.
-        const controlling = status[mic].taken && status[mic].client === subscribeid.toString();
-        Object.assign(micstate[mic], status[mic], {controlling: controlling});
+        if (status[mic].name !== undefined && status[mic].name.length === 0) delete status[mic].name; //don't overwrite a name with blank once we have captured it.
+        const controlling = status[mic].connected && status[mic].taken && status[mic].client === subscribeid;
+        Object.assign(micstate[mic], status[mic]);
         if (!controlling && micstate[mic].ticker !== undefined) micstate[mic].ticker.destroy(); 
 
       }
@@ -160,37 +228,40 @@ const eventStatus = (e) => {
       if(!mics.find(aMic => micU === aMic)) {
         mics.push(micU);
       }
-      if (currentMic.length === 0) {
-        currentMic = mic;
-        micChange(currentMic);
-      } else if(currentMic === mic) {
-        self.postMessage(['status', {
-          connected: micstate[mic].connected,
-          name: micstate[mic].name,
-          controlling: micstate[mic].controlling,
-       }]);
+    }
+    if (currentMic.length === 0) {
+      if (possibleMic.length > 0) {
+        currentMic = possibleMic;
+      } else {
+        currentMic = firstMic;
+      }
+    }
+    if (altMic.length === 0 && currentMic.length > 0 && !micstate[currentMic].connected) {
+      for (const mic in micstate) {
+        if (mic !== currentMic && micstate[mic].connected) {
+          altMic = mic;
+          break;
+        }
       }
     }
     if (initialMicsLength !== mics.length) {
-      self.postMessage(['newMics', mics]);
+      self.postMessage(['mics', mics]);
     }
+    sendStatus();
   } catch (e) {
     console.warn('Error in parsing Event Status:', e);
-    self.postMessage(['state', 'Error:S'])
+    sendError('Stat')
   }
 }
 
 const eventTake = (e) => {
   try {
     const {channel,client} = JSON.parse(e.data);
-    const controlling = (client === subscribeid.toString());
-    Object.assign(micstate[channel], {client:client, taken: true, controlling: controlling});
-    if (channel === currentMic) {
-      self.postMessage(['control', controlling]);
-    } 
+    Object.assign(micstate[channel], {client:client, taken: true});
+    sendStatus();
   } catch (err) {
     console.warn('Error in parsing Event Remove:', err);
-    self.postMessage(['state', 'error:T']);
+    sendError('ETake');
   }
 
 }
@@ -198,74 +269,74 @@ const eventTake = (e) => {
 
 const loudReset = () => {
   const mic = currentMic
-  if (micstat[mic].controlling && !micstat[mic].recording) {
-
+  if (micstate[mic].taken && micstate[mic].client === subscribeid && !micstate[mic].recording) {
     callApi('reset',mic, micstate[mic].token).then(({state, timer}) => {
       if (state && mic === currentMic) {
         self.postMessage(['seconds', timer]);
       }
     });
   }
-
 }
 
-const micChange = (newMic) => {
-  const old = currentMic;
-  currentMic = newMic;
-  console.group('Mic Change');
-  console.log('From ', old ,' To ', currentMic);
-  self.postMessage(['micChange',{
-    connected: micstate[currentMic].connected,
-    name: micstate[currentMic].name,
-    controlling: micstate[currentMic].controlling,
-    recording: micstate[currentMic].recording,
-    mode: 
 
-  }])
-   connected = micstate[currentMic].connected;
-  controlling = micstate[currentMic].controlling;
-  recording = micstate[currentMic].recording;
-  mode = micstate[currentMic].mode;
-  filename = micstate[currentMic].filename;
-  console.log('To Mode ',mode, ' Connected ', connected, 
-  ' Controlling ', controlling, ' Recording ', recording, ' Filename ', filename );
-  console.log('State from ', state, ' to ',micstate[currentMic].state);
-  console.log('Target from ', target,' to ', micstate[currentMic].target );
-  console.groupEnd()
-  state = micstate[currentMic].state;
-  target = micstate[currentMic].target;
-  micname = micstate[currentMic].name;
-
-}
 
 const releaseControl = () => {
   const mic = currentMic;
   if (micstate[mic].ticker !== undefined) micstate[mic].ticker.destroy();
   callApi('release', mic, micstate[mic].token).then(({state}) => {
     if (state) {
-      if (mic === currentMic) {
-        self.postMessage(['release', mic]);
-      }
-      Object.assign(this.micstate[mic], {taken: false, client: '', controlled: false})
+      Object.assign(micstate[mic], {taken: false, client: ''});
+      sendStatus();
     } else {
-      self.postMessage(['state','Error G']);
+      sendError('Give', mic);
     }
   });
 };
+const sendError = (error, mic) => {
+  console.log('Send Error: ', error);
+  const theMic = mic || currentMic;
+  if(currentMic === theMic) {
+    self.postMessage(['error', error]);
+  }
+};
+const sendStatus = () => {
+  console.log('Send Status');
+  self.postMessage(['status',{
+    mic: currentMic,
+    mode: micstate[currentMic].mode,
+    alt: micstate[currentMic].connected ? '' : (altMic.length > 0 ? micstate[altMic].name : ''),
+    name: micstate[currentMic].name,
+    connected: micstate[currentMic].connected,
+    taken: micstate[currentMic].taken,
+    controlling: micstate[currentMic].taken && micstate[currentMic].client === subscribeid ,
+    recording: micstate[currentMic]. recording,
+    filename: micstate[currentMic].filename
+  }]);
+};
+
+const startRecording = () => {
+  const mic = currentMic;
+  callApi('start', mic,micstate[mic].token).then(({state,name}) => {
+    if (state) {
+      Object.assign(micstate[mic], {recording: true, filename: name});
+      sendStatus();
+    } else {
+      sendError('Record', mic);
+    }
+
+  });
+}
+
 const stopRecording = () => {
   const mic = currentMic;
   callApi('stop', mic, micstate[mic].token).then(({state,kept}) => {
+    micstate[mic].recording = false;
+    if (!kept) micstate[mic].filename = '';
     if (state) {
-      micstate[mic].recording = false;
-      if (!kept) micstate[mic].filename = '';
-      if (mic === currentMic) {
-        self.postMessage(['stop', kept]);
-     
+      sendStatus();
     } else {
-      this.micstate[mic].recording = false;
-      if (!(state && kept)) this.micstate[mic].filename = '';
+      sendError('Stop', mic);
     }
-  }
   });
 
 };
@@ -276,28 +347,24 @@ const takeControl = () => {
     if (state) {
       Object.assign(micstate[mic], {
         token: token, 
-        controlling: true, 
         taken: true, 
         client: subscribeid, 
         ticker:  new Ticker(4*60*1000) //create a renew ticker for 4 minutes
       });
-      if (currentMic === mic) {
-        self.postMessage(['control', true])
-      } 
-     
+      sendStatus();
       try {
         while(true) {
           await micstate[mic].ticker.nextTick;
-          const {state, token} = await this._callApi('renew', mic, micstate[mic].token);
+          const {state, token} = await callApi('renew', mic, micstate[mic].token);
           if (state) {
             micstate[mic].token = token;
           } else {
-            Object.assign(this.micstate[mic], {controlling: false, token:''});
-            if (currentMic === mic) {
-              self.postMessage(['control', false]);
-        
-            } 
-            micstate[mic].ticker.destroy();
+            micstate[mic].token = '';
+            if (micstate[mic].taken && micstate[mic].client === subscribeid) {
+              Object.assign(micstate[mic], {taken: false, client: ''});
+            }
+            sendStatus();
+            micstate[mic].ticker.destroy(); //no last as we will invoke immediate catch and want to have completed other stuff first
           }
         }
 
@@ -306,24 +373,20 @@ const takeControl = () => {
         delete micstate[mic].ticker;
       }
     } else {
-      if (mic === currentMic) {
-        self.postMessage(['state','Await R']);
-      } 
+      sendError('Await R', mic);
     }
   });
 };
 
-const callApi = async (func,channel,token) => {
-  try {
-    const response = await fetch(`/api/${channel}${token? '/' + token : ''}/${func}`);
-    return await response.json(); 
-  } catch(err) {
-    console.warn('Error response to Api Request ', func , ' channel ', channel, ' token ', token, ':' , err);
-    self.postMessage(['state','Error:C']);
 
-  }
-  return {state: false};
-};
+const eventSrc = new EventSource(`/api/${subscribeid}/status`);
+eventSrc.addEventListener('add', eventAdd);
+eventSrc.addEventListener('close', eventClose);
+eventSrc.addEventListener('release', eventRelease);
+eventSrc.addEventListener('remove', eventRemove);
+eventSrc.addEventListener('status', eventStatus);
+eventSrc.addEventListener('take', eventTake);   
+
 
 
   

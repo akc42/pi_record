@@ -17,7 +17,7 @@
     You should have received a copy of the GNU General Public License
     along with Recorder.  If not, see <http://www.gnu.org/licenses/>.
 */
-(function() {
+Ticker = (function() {
   let tickCounter = 0;
   let promiseCounter = 0;
   return class Ticker {
