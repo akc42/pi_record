@@ -24,7 +24,8 @@
     api: chalk.green,
     error: chalk.white.bgRed,
     url: chalk.white.bgMagenta,
-    rec: chalk.cyan
+    rec: chalk.cyan,
+    log: chalk.yellowBright
   };
 
   function logger(level, message) {

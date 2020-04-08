@@ -188,7 +188,7 @@
           }
           req.once('end', () => {
             debug('client closed status channel ', client.toString());
-            delete subscribedChannels[client].response;
+            if (subscribedChannels[client] !== undefined) delete subscribedChannels[client].response;
             //we don't do anything else as they may come back and we need to have the correct picture
           });
           const status = {
@@ -257,8 +257,12 @@
         res.statusCode = 200;
         const uuid = uuidv4();
         logger('api', 'Subscribe id supplied: ' + uuid);
-        res.end(JSON.stringify({state: true, uuid: uuid}));
+        res.end(JSON.stringify({state: true, uuid: uuid, renew: parseInt(process.env.RECORDER_RENEW_TIME,10)}));
       });
+      router.get('/api/log/:logstring',(req,res) => {
+        logger('log', req.params.logstring);
+        res.end();
+      } );
       router.use('/', serveFile);
       usb.on('attach', usbAttach);
       usb.on('detach', usbDetach);

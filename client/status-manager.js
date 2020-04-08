@@ -21,8 +21,12 @@
 
 importScripts('./ticker.js');
 let subscribeid = '';
-fetch('/subscribeid').then(response =>response.json()).then(({state,uuid}) => {
+let renewtimer = '';
+fetch('/subscribeid').then(response =>response.json()).then(({state,uuid,renew}) => {
+  console.group('Status Manager - subscribeid response')
+  console.log(`state ${state}, renew ${renew}, uuid ${uuid}`);
   if(state) {
+    renewtimer = renew;
     subscribeid = uuid;
     self.postMessage(['subscribeid', subscribeid]);
     const eventSrc = new EventSource(`/api/${subscribeid}/status`);
@@ -35,6 +39,7 @@ fetch('/subscribeid').then(response =>response.json()).then(({state,uuid}) => {
   } else {
     console.error('Failed to initialise because cannot get subscribe id')
   }
+  console.groupEnd();
 });  
 
 const micstate = {};
@@ -46,7 +51,7 @@ const mics = [];
 
 
 onmessage = function(e) {
-  console.group('Status Worker Message');
+  console.group('Status Manager Message');
   const func = e.data[0];
   const value = e.data[1];
   console.log('Function: ', func, ' with Value ', value);
@@ -308,14 +313,17 @@ const releaseControl = () => {
   });
 };
 const sendError = (error, mic) => {
-  console.log('Send Error: ', error);
+  console.group('Status Manager Send Error');
+  console.log('about to send error : ', error);
   const theMic = mic || currentMic;
   if(currentMic === theMic) {
     self.postMessage(['error', error]);
   }
+  console.groupEnd();
 };
 const sendStatus = () => {
-  console.log('Send Status');
+  console.group('Status Manager Send Status');
+  console.log('about to send');
   self.postMessage(['status',{
     mic: currentMic,
     mode: micstate[currentMic].mode,
@@ -327,6 +335,7 @@ const sendStatus = () => {
     recording: micstate[currentMic]. recording,
     filename: micstate[currentMic].filename
   }]);
+  console.groupEnd();
 };
 
 const startRecording = () => {
@@ -364,7 +373,7 @@ const takeControl = () => {
         token: token, 
         taken: true, 
         client: subscribeid, 
-        ticker:  new Ticker(parseInt(process.env,RECORDER_RENEW_TIME,10) *60*1000) //create a renew ticker for 4 minutes
+        ticker:  new Ticker(renewtimer * 1000) //create a renew ticker 
       });
       sendStatus();
       try {

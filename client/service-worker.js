@@ -72,13 +72,12 @@ self.addEventListener('fetch', (event) => {
     //special value to be always returned from the cache.
     event.respondWith(caches.open(version).then(cache => cache.match(event.request)));
   } else {
-    event.respondWith(caches.open(version).then(cache => cache.match(event.request).then(response => {
-      const fetchPromise = fetch(event.request).then(networkResponse => {
-        cache.put(event.request, networkResponse.clone());
-        return networkResponse;
-      });
-      return response || fetchPromise;
-    })));
+    event.respondWith(
+      fetch(event.request).then(response => caches.match(event.request).then(cache => {
+        cache.put(event.request, response.clone()); 
+        return response;
+      }).catch(() => response)).catch(() => caches.match(event.request))
+    );
   }
 });
 

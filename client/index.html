@@ -56,15 +56,10 @@
     <script type="module" src="./rec-app.js"></script>
     <script>
       if('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
-          .then(function(registration) {
-                console.log('Service Worker Registered');
-          });
-
-        navigator.serviceWorker.ready.then(function(registration) {
-           console.log('Service Worker Ready');
-        });
+        navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
       }
+
+
     </script>
     <style>
       html {
@@ -76,7 +71,6 @@
         min-height: 100vh;
         font-family: sans-serif;
         line-height: 1.5;
-        letter-spacing: 0.1em;
         background-color: #fafafa;
         color: #333;
         display: flex;
