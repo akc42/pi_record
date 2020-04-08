@@ -20,8 +20,23 @@
 //Web worker script to manage status messages.
 
 importScripts('./ticker.js');
+let subscribeid = '';
+fetch('/subscribeid').then(response =>response.json()).then(({state,uuid}) => {
+  if(state) {
+    subscribeid = uuid;
+    self.postMessage(['subscribeid', subscribeid]);
+    const eventSrc = new EventSource(`/api/${subscribeid}/status`);
+    eventSrc.addEventListener('add', eventAdd);
+    eventSrc.addEventListener('close', eventClose);
+    eventSrc.addEventListener('release', eventRelease);
+    eventSrc.addEventListener('remove', eventRemove);
+    eventSrc.addEventListener('status', eventStatus);
+    eventSrc.addEventListener('take', eventTake);
+  } else {
+    console.error('Failed to initialise because cannot get subscribe id')
+  }
+});  
 
-const subscribeid = Date.now().toString();  //create a unique (good enough) id
 const micstate = {};
 let currentMic = '';
 let altMic = '';
@@ -349,7 +364,7 @@ const takeControl = () => {
         token: token, 
         taken: true, 
         client: subscribeid, 
-        ticker:  new Ticker(4*60*1000) //create a renew ticker for 4 minutes
+        ticker:  new Ticker(parseInt(process.env,RECORDER_RENEW_TIME),10) *60*1000) //create a renew ticker for 4 minutes
       });
       sendStatus();
       try {
@@ -379,13 +394,7 @@ const takeControl = () => {
 };
 
 
-const eventSrc = new EventSource(`/api/${subscribeid}/status`);
-eventSrc.addEventListener('add', eventAdd);
-eventSrc.addEventListener('close', eventClose);
-eventSrc.addEventListener('release', eventRelease);
-eventSrc.addEventListener('remove', eventRemove);
-eventSrc.addEventListener('status', eventStatus);
-eventSrc.addEventListener('take', eventTake);   
+   
 
 
 

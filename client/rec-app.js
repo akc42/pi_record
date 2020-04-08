@@ -518,6 +518,9 @@ class RecApp extends LitElement {
     const func = e.data[0];
     const value = e.data[1];
     switch (func) {
+      case 'subscribeid':
+        this.subscribeid = value;
+        break;
       case 'seconds':
         this.seconds = value;
         break;
@@ -552,7 +555,8 @@ class RecApp extends LitElement {
         console.warn('Unknown Function ', func, ' received from worker');
     }
   }
-  async _unload() {
+  _unload() {
+    fetch(`/api/${this.subscribeid}/done`);
     this.worker.terminate();     
   }
 }
