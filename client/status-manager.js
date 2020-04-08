@@ -364,7 +364,7 @@ const takeControl = () => {
         token: token, 
         taken: true, 
         client: subscribeid, 
-        ticker:  new Ticker(parseInt(process.env,RECORDER_RENEW_TIME),10) *60*1000) //create a renew ticker for 4 minutes
+        ticker:  new Ticker(parseInt(process.env,RECORDER_RENEW_TIME,10) *60*1000) //create a renew ticker for 4 minutes
       });
       sendStatus();
       try {
