@@ -70,7 +70,7 @@
   let server;
   const recorders = {};
   let statusid = 0;
-  const subscribedChannels = new Map();
+  const subscribedChannels = {};
   let statusTimer = 0;
 
   async function startUp (http2, Router,enableDestroy, logger, Recorder, usb) {
@@ -103,61 +103,35 @@
       });
       server.listen(parseInt(process.env.RECORDER_PORT,10),'0.0.0.0');
       enableDestroy(server);
-      
-      router.get('/api/:channel/:client/take',checkRecorder, (req,res) => {
-        debug('take request received');
+      router.get('/api/:client/done',async (req,res) => {
+        debug('done request received');
         const client = req.params.client;
-        const {state, token, controller } = req.recorder.take(client);
         res.statusCode = 200;
-        if (state) {
-          //lets see if we are a subscriber
-          for (let [response, entry] of subscribedChannels.entries()) {
-            if (entry.client === client) {
-              entry.recorder = req.recorder;
-              entry.token = token;
-              subscribedChannels.set(response,entry);
-              break;
-            }
+        if (subscribedChannels[client] !== undefined) {
+          const subscriber = subscribedChannels[client];
+          for(const channel in subscriber.channels) {
+              subscriber.channels[channel].recorder.release(subscriber.channels[channel].token);
           }
-          res.end(JSON.stringify({state: true, token: token}));
-          sendStatus('take',{ client: client, channel: req.params.channel});
+          delete subscribedChannels[client];
+          res.end(JSON.stringify({state: true}));
         } else {
-          res.end(JSON.stringify({state: false, client: controller}));
+          res.end(JSON.stringify({state: false}));
         }
       });
-      router.get('/api/:channel/:token/renew', checkRecorder,(req,res) => {
-        debug('renew request received');
-        const previousToken = req.params.token
-        const result = req.recorder.renew(req.params.token);  
-        res.statusCode = 200;
-        res.end(JSON.stringify(result));
-        //replace token in subscriber list if its there
-        for (let [response, entry] of subscribedChannels.entries()) {
-          if (entry.token === previousToken) {
-            entry.token = result.state? result.token : '';
-            if (!result.state) {
-              entry.recorder = null;
-              sendStatus('release', {channel:req.params.channel});
-            }
-            subscribedChannels.set(response,entry);
-            break;
-          }
-        }          
-        
-      });
+      
       router.get('/api/:channel/:token/release', checkRecorder, async (req,res) => {
         debug('release request received')
         const token = req.params.token
+        const channel = req.params.channel
         const state = await req.recorder.release(req.params.token);
         res.statusCode = 200;
         res.end(JSON.stringify({state: state}));
         if (state) {
           //reset or state
-          for (let [response, entry] of subscribedChannels.entries()) {
-            if (entry.token === token) {
-              entry.token = '';
-              entry.recorder = null
-              subscribedChannels.set(response,entry);
+          for (const client in subscribedChannels) {
+            if (subscribedChannels[client].channels[channel] !== undefined && 
+              subscribedChannels[client].channels[channel].token === token) {
+              delete subscribedChannels[client].channels[channel]
               break;
             }
           }
@@ -165,21 +139,91 @@
           sendStatus('release', {channel:req.params.channel});
         }
       });
-      router.get('/api/:channel/:token/start', checkRecorder, async (req,res) => {
-        debug('got a start request with params ', req.params);
+      router.get('/api/:channel/:token/renew', checkRecorder,(req,res) => {
+        debug('renew request received');
+        const channel = req.params.channel;
+        const previousToken = req.params.token
+        const result = req.recorder.renew(req.params.token);  
         res.statusCode = 200;
-        res.end(JSON.stringify(await req.recorder.record(req.params.token)));
-      });
-      router.get('/api/:channel/:token/stop', checkRecorder, async (req,res) => {
-        debug('got a stop request with params ', req.params);
-        res.statusCode = 200;
-        res.end(JSON.stringify(await req.recorder.stop(req.params.token)));
+        res.end(JSON.stringify(result));
+        //replace token in subscriber list if its there
+        for (const client in subscribedChannels) {
+          if (subscribedChannels[client].channels[channel] !== undefined && 
+            subscribedChannels[client].channels[channel].token === previousToken) {
+            
+            if (result.state) {
+              subscribedChannels[client].channels[channel].token = result.token
+            } else {
+              delete subscribedChannels[client].channels[channel]
+              sendStatus('release', {channel:req.params.channel});
+            }
+            break;
+          }
+        }          
       });
       router.get('/api/:channel/:token/reset', checkRecorder, async (req,res) => {
         debug('got a loudness reset request with params', req.params);
         res.statusCode = 200;
         res.end(JSON.stringify(await req.recorder.reset(req.params.token)));
       }); 
+      router.get('/api/:channel/:token/start', checkRecorder, async (req,res) => {
+        debug('got a start request with params ', req.params);
+        res.statusCode = 200;
+        res.end(JSON.stringify(await req.recorder.record(req.params.token)));
+      });
+      router.get('/api/:client/status', (req,res) => {
+        if (req.headers.accept && req.headers.accept == 'text/event-stream') {
+          const client = req.params.client;
+          const response = res;
+          debug('/api/status received creating/reusing channel ', client);
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
+          });
+          if (subscribedChannels[client] === undefined) {
+            subscribedChannels[client] = {response: response,channels: {}};
+          } else {
+            subscribedChannels[client].response = response;
+          }
+          req.once('end', () => {
+            debug('client closed status channel ', client.toString());
+            delete subscribedChannels[client].response;
+            //we don't do anything else as they may come back and we need to have the correct picture
+          });
+          const status = {
+            scarlett: recorders.scarlett !== undefined? recorders.scarlett.status : {connected: false},
+            yeti: recorders.yeti !== undefined? recorders.yeti.status :{connected: false}
+          };
+          sendStatus('status', status, response);
+
+        } else {
+          res.writeHead(404);
+          res.end();
+        }
+      });
+      router.get('/api/:channel/:token/stop', checkRecorder, async (req,res) => {
+        debug('got a stop request with params ', req.params);
+        res.statusCode = 200;
+        res.end(JSON.stringify(await req.recorder.stop(req.params.token)));
+      });
+      router.get('/api/:channel/:client/take',checkRecorder, (req,res) => {
+        debug('take request received');
+        const client = req.params.client;
+        const channel = req.params.channel;
+        const {state, token, controller } = req.recorder.take(client);
+        res.statusCode = 200;
+        if (state) {
+          //lets see if we are a subscriber
+          if (subscribedChannels[client] !== undefined) {
+            subscribedChannels[client].channels[channel] = {recorder :req.recorder, token: token};
+          }
+          res.end(JSON.stringify({state: true, token: token}));
+          sendStatus('take',{ client: client, channel: req.params.channel});
+        } else {
+          res.end(JSON.stringify({state: false, client: controller}));
+        }
+      });
       router.get('/api/:channel/timer', checkRecorder, (req,res) => {
         debug('got a timer request for channel ', req.recorder.name)
         res.statusCode = 200;
@@ -209,37 +253,6 @@
 
         }
       });
-      router.get('/api/:client/status', (req,res) => {
-        if (req.headers.accept && req.headers.accept == 'text/event-stream') {
-          const client = req.params.client;
-          const response = res;
-          debug('/api/status received creating/reusing channel ', client);
-          res.writeHead(200, {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive'
-          });
-          subscribedChannels.set(response, {client: client, token:'', recorder: null});
-          req.once('end', () => {
-            debug('client closed status channel ', client.toString());
-            const entry = subscribedChannels.get(response);
-            if (entry.recorder !== null) {
-              entry.recorder.release(entry.token);
-            }
-            subscribedChannels.delete(response);
-
-          });
-          const status = {
-            scarlett: recorders.scarlett !== undefined? recorders.scarlett.status : {connected: false},
-            yeti: recorders.yeti !== undefined? recorders.yeti.status :{connected: false}
-          };
-          sendStatus('status', status, response);
-
-        } else {
-          res.writeHead(404);
-          res.end();
-        }
-      });
       router.get('/subscribeid', (req,res) => {
         res.statusCode = 200;
         const uuid = uuidv4();
@@ -261,14 +274,13 @@
         scarlett: recorders.scarlett !== undefined? recorders.scarlett.status : {connected: false},
         yeti: recorders.yeti !== undefined? recorders.yeti.status :{connected: false}
       };
-  sendStatus('status', status);
+      sendStatus('status', status);
       statusTimer = setInterval(() => {
         const status = {
           scarlett: recorders.scarlett !== undefined? recorders.scarlett.status : {connected: false},
           yeti: recorders.yeti !== undefined? recorders.yeti.status :{connected: false}
         };
-      sendStatus('status', status);
-    
+        sendStatus('status', status);
       }, 90000);
 
       logger('app', 'Recorder Web Server Operational Running on Port:' +
@@ -352,8 +364,8 @@
     if (response) {
       sendMessage(response, type, data);
     } else {
-      for(let client of subscribedChannels.keys()) {
-        sendMessage(client, type, data);
+      for(const client in subscribedChannels) {
+        if (subscribedChannels[client].response !== undefined) sendMessage(subscribedChannels[client].response, type, data);
       }
     }
 

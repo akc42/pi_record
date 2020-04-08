@@ -67,6 +67,8 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
       this._startVolume();            
       this._recordingPromise = Promise.resolve();
       this._name = name;
+      this._recordingTimeout = 0;
+      this._recordingStopPromise = Promise.resolve();
     }
     get name() {
       return this._name;
@@ -119,8 +121,16 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
       return this.controlled;
     }
     _makeToken(client) {
+      //tomorrow at 4:am
+      const now = new Date();
+      const fouram = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + 1,
+        4,0,0
+      );
       const payload = {
-        exp: Math.round(Date.now()/1000) + 300,   //5 minutes time
+        exp: fouram,
         hw: this._name,
         client: client
       };
@@ -128,6 +138,14 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
       this._client = client;
       debug(`Recorder ${this._name} made a new token`);
       return this._controlled;
+    }
+    async _setRecordingTimeout() {
+      if (this._recodingTimeout === 0) await this._recordingStopPromise;
+      this._recordingTimeout = setTimeout(() => {
+        this._recordingTimeout = 0;
+        this._recordingStopPromise = this._stop();
+      }, parseInt(process.env.RECORDER_RECORDING_TIME) * 1000);
+
     }
     _startVolume() {
       const args = volargs.replace('hw:dddd', 'hw:' + this._device).replace(/s32le/g,this._fmt).split(' ');
@@ -148,6 +166,12 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
     async _stop() {
       //internal function to stop recording
       if (this._recording !== undefined) {
+        if (this._recordingTimeout = 0) {
+          await this._recordingStopPromise;
+        } else {
+          clearTimeout(this._recordingTimeout);
+          this._recordingTimeout = 0;
+        }
         const s = new Semaphore();
         await s.start();  //make sure we are not switching over right now
         this._recording.stderr.unpipe(); //disconnect from the volume filter
@@ -197,7 +221,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
             cwd: path.resolve(__dirname, '../'),
             stdio: ['pipe', 'ignore', 'pipe']
           });
-          this._timerStart = Date.now();
+          this._timerStart = Date.now()
           this._recording.stderr.pipe(this._sed.stdin, {end: false});
           this._recordingPromise = new Promise(resolve => this._recording.once('exit', async (code,signal) => {
             debug('recording for ', this._name, ' exited');
@@ -214,6 +238,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
             resolve(kept);
           }));
           s.end();
+          await this._setRecordingTimeout();
           logger('rec', `recorder ${this._name} recording ${filename}`);
           return {state: true, name: this._basename}; 
         }
@@ -235,7 +260,14 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
     }
     renew(token) {
       debug('Recorder ', this._name, ' request to renew token');
-      if (this._checkToken(token)) return {state: true, token: this._makeToken(this.client)};
+      if (this._checkToken(token)) {
+        if (this._recording !== undefined && this._recordingTimeout !== 0) {
+          //normal case if we were recording and not just in the point of timeout out (no longer recording)
+          clearTimeout(this.recordingTimeout);
+          this._setRecordingTimeout(); 
+        }
+        return {state: true, token: this._makeToken(this.client)};
+      }
       logger('rec', `recorder ${this._name} failed to renew, so control released`);
       return {state: false };
     }
