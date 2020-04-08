@@ -12,10 +12,11 @@
       "min_uptime"       : "30s",
       "max_restarts"     : 5,
       "merge_logs" : true,
-      "log_date_format" : "",
+      "log_date_format" : "YYYY-MM-DD HH:mm:ss",
       "env": {
         "DEBUG_COLORS": true,
-        "RECORDER_RECORDINGS": "../recordings"
+        "RECORDER_RECORDINGS": "../recordings",
+        "REC_NOLOGDATE": "yes"
       }
     }
   ]

@@ -29,15 +29,12 @@
 
   function logger(level, message) {
     let logLine = '';
-    if (process.env.PAS_NOLOG === undefined) {
-      const aDate = new Date();
-      const day = ('00' + aDate.getDate().toString()).slice(-2);
-      const month =  ('00' + (aDate.getMonth() + 1).toString()).slice(-2);
-      const year = ('000' + aDate.getFullYear().toString()).slice(-4);
-      const ldate = day +'/' + month + '/' + year + ' ' + aDate.toTimeString().substring(0,8);
-      logLine += ' ' + ldate + ' ' + COLOURS[level](message);
+    if (process.env.REC_NOLOG === undefined) {
+      if (process.env.REC_LOGNODATE === undefined) logLine += new Date().toISOString() + ': ';
+      logLine += COLOURS[level](message);
       //eslint-disable-next-line no-console
-      console.log(logLine);
+      console.log(logLine.trim());
+
     }
   }
 
