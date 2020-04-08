@@ -1,7 +1,7 @@
 {
   "name": "recorder",
   "private": true,
-  "version": "0.0.1",
+  "version": "2.0.0",
   "description": "Top Level Control File For Recorder",
   "licence": "GPL",
   "main": "server/server.js",
