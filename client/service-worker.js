@@ -19,35 +19,31 @@
 */
 const version = 'recorder-v1'
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(async function() {
-    const cache = await caches.open(version);
-    await cache.addAll([
-      '/',
-      '/index.html',
-      '/images/light-aluminium.png',
-      '/images/recorder-icon-32.png',
-      '/images/recorder-icon-144.png',
-      '/images/recorder-icon.svg',
-      '/styles/label.js',
-      '/styles/metal.js',
-      '/lcd/characters.js',
-      '/lcd/classes.js',
-      '/manifest.json',
-      '/favicon.ico',
-      '/material-icon.js',
-      '/rec-app.js',
-      '/rec-led.js',
-      '/rec-record-button.js',
-      '/rec-reset-button.js',
-      '/rec-volume.js',
-      '/round-switch.js',
-      '/subscriberid'   // this is a special url expected to be called once by the service worker to set up a uuid, which is then served from cache
-    ]);
-  });
-});
+self.addEventListener('install', (event) => 
+  event.waitUntil(caches.open(version).then( cache => cache.addAll([
+    '/',
+    '/index.html',
+    '/images/light-aluminium.png',
+    '/images/recorder-icon-32.png',
+    '/images/recorder-icon-144.png',
+    '/images/recorder-icon.svg',
+    '/styles/label.js',
+    '/styles/metal.js',
+    '/lcd/characters.js',
+    '/lcd/classes.js',
+    '/manifest.json',
+    '/favicon.ico',
+    '/material-icon.js',
+    '/rec-app.js',
+    '/rec-led.js',
+    '/rec-record-button.js',
+    '/rec-reset-button.js',
+    '/rec-volume.js',
+    '/round-switch.js',
+    '/subscribeid'   // this is a special url expected to be called once by the service worker to set up a uuid, which is then served from cache
+  ])))
+);
 self.addEventListener('activate', (event) => {
-  subscribeid = Date.now().toString();  //something to use for our EventSrc subscription;
   event.waitUntil(async function() {
     const cacheNames = await caches.keys();
     await Promise.all(
@@ -74,26 +70,15 @@ self.addEventListener('fetch', (event) => {
     return;  
   } else if('/subscribeid'  === requestURL.pathname) {
     //special value to be always returned from the cache.
-    event.respondWith(async () => {
-      const cache = await caches.open(version);
-      return await cache.match(event.request);
-    });
+    event.respondWith(caches.open(version).then(cache => cache.match(event.request)));
   } else {
-    event.respondWith(async () => {
-      const cache = await caches.open(version);
-      const cachedResponse = await cache.match(event.request);
-      const networkResponsePromise = fetch(event.request);
-
-      event.waitUntil(async () => {
-        //when we do get a network response put any updated value in the cache.
-        const networkResponse = await networkResponsePromise;
-        await cache.put(event.request, networkResponse.clone());
+    event.respondWith(caches.open(version).then(cache => cache.match(event.request).then(response => {
+      const fetchPromise = fetch(event.request).then(networkResponse => {
+        cache.put(event.request, networkResponse.clone());
+        return networkResponse;
       });
-
-      // Returned the cached response if we have one, otherwise return the network response.
-      return cachedResponse || networkResponsePromise;
-    
-    });
+      return response || fetchPromise;
+    })));
   }
 });
 
