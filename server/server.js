@@ -40,6 +40,7 @@
   const etag = require('etag');
   const logger = require('./logger');
   const contentDisposition = require('content-disposition');
+  const {v4: uuidv4} = require('uuid');
 
 
 
@@ -238,6 +239,12 @@
           res.writeHead(404);
           res.end();
         }
+      });
+      router.get('/subscribeid', (req,res) => {
+        res.statusCode = 200;
+        const uuid = uuidv4();
+        logger('api', 'Subscribe id supplied: ' + uuid);
+        res.end(JSON.stringify({state: true, uuid: uuid}));
       });
       router.use('/', serveFile);
       usb.on('attach', usbAttach);
