@@ -58,17 +58,8 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const requestURL = new URL(event.request.url);
-
   if (/^\/api\//i.test(requestURL.pathname)) {
-    /*
-      I immediately hand these back to the browser to do its own thing
-
-      I don't even want to use event.respondWith - mainly because /api/:subscribeid/status and
-      /api/:channel/volume are both event streams with potentially long lives.  I am not sure what
-      would happen if I (the service worker) attempted to get in the middle. It might work - A promise just disappears inside
-      the browser, but since I don't know at this stage I wont risk it.
-    */
-    return;  
+    event.respondWith(fetch(event.request)); //just pass straight through
   } else if('/subscribeid'  === requestURL.pathname) {
     //special value to be always returned from the cache.
     event.respondWith(caches.open(version).then(cache => cache.match(event.request)));

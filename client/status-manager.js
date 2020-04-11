@@ -23,8 +23,7 @@ importScripts('./ticker.js','./remotelog.js');
 let subscribeid = '';
 let renewtimer = '';
 let eventSrc;
-console.group('SM - Initialising');
-console.log('SM requesting subscribeid');
+
 fetch('/subscribeid').then(response =>response.json()).then(({state,uuid,renew}) => {
   console.group('Status Manager - subscribeid response')
   console.log(`state ${state}, renew ${renew}, uuid ${uuid}`);
@@ -44,14 +43,12 @@ fetch('/subscribeid').then(response =>response.json()).then(({state,uuid,renew})
   }
   console.groupEnd();
 });  
-console.log('SM - setting global variables');
+
 const micstate = {};
 let currentMic = '';
 let altMic = '';
 const mics = [];
 
-
-console.log('SM - declaring Message Function');
 onmessage = function(e) {
   console.group('Status Manager Received Message');
   const func = e.data[0];
@@ -116,16 +113,16 @@ onmessage = function(e) {
       }
       break; 
     case 'sleep':
-      remoteLog('Sleep Request Received');
+      remoteLog('Sleep Request Received', subscribeid);
       //we need to look at all the mics.  If we are recording keep going, but if not then we should release control.
       let foundRecording = false;
       for(const mic in micstate) {
         if (micstate[mic].taken && micstate[mic].client === subscribeid) {
           if (micstate[mic].recording) {
-            remoteLog('Recording on Mic ' + mic);
+            remoteLog('Recording on Mic ' + mic, sunscribeid);
             foundRecording = true;
           } else {
-            remoteLog('Releasing Mic ' + mic)
+            remoteLog('Releasing Mic ' + mic, subscribeid)
             //we must release any taken mics if we are not recording on them
             const savedMic = currentMic;
             currentMic = mic;
@@ -141,20 +138,19 @@ onmessage = function(e) {
       eventSrc.removeEventListener('reset', eventReset);
       eventSrc.removeEventListener('status', eventStatus);
       eventSrc.removeEventListener('take', eventTake);
-
       if (!foundRecording) { 
-        remoteLog('Shut Down ' + subscribeid);
+        remoteLog('Shut Down', subscribeid);
         callApi('done', subscribeid); //tell the server we are going
         eventSrc.close();
         self.postMessage(['kill','']); //ask the ui to shut down (and shut me too);
       } else {
-        remoteLog('Telling Client to Sleep');
+        remoteLog('Telling Client to Sleep', subscribeid);
         eventSrc.close();
         self.postMessage(['sleep', currentMic]);
       }
       break;
     case 'awaken':
-      remoteLog('Awaken Request Recieved');
+      remoteLog('Awaken Request Recieved', subscribeid);
       eventSrc = new EventSource(`/api/${subscribeid}/status`);
       eventSrc.addEventListener('add', eventAdd);
       eventSrc.addEventListener('close', eventClose);
@@ -169,8 +165,8 @@ onmessage = function(e) {
   }
   console.groupEnd();
 
-}
-console.log('SM - declaring api function');
+};
+
 const callApi = async (func,channel,token) => {
   try {
     const response = await fetch(`/api/${channel}${token? '/' + token : ''}/${func}`);
@@ -182,8 +178,6 @@ const callApi = async (func,channel,token) => {
   }
   return {state: false};
 };
- 
-console.log('SM - declaring eventSrc handlers');
 
 const eventAdd = (e) => {
   try {
@@ -217,8 +211,7 @@ const eventAdd = (e) => {
     console.warn('Error in parsing Event Add:', e);
     sendError('Add');
   }
-}
-
+};
 
 const eventClose = () => {
   //the server is closing down, so reset everything to wait for it to come up again
@@ -228,7 +221,8 @@ const eventClose = () => {
     delete micstate[mic].ticker;
   }
   self.postMessage(['close', '']);
- }
+ };
+
 const eventRelease = (e) => {
   try {
     const {channel} = JSON.parse(e.data);     
@@ -348,8 +342,6 @@ const eventTake = (e) => {
 
 }
 
-console.log('SM - declaring operational functions');
-
 const loudReset = () => {
   const mic = currentMic
   if (micstate[mic].taken && micstate[mic].client === subscribeid && !micstate[mic].recording) {
@@ -359,9 +351,7 @@ const loudReset = () => {
       }
     });
   }
-}
-
-
+};
 
 const releaseControl = () => {
   const mic = currentMic;
@@ -375,6 +365,7 @@ const releaseControl = () => {
     }
   });
 };
+
 const sendError = (error, mic) => {
   console.group('Status Manager Send Error');
   console.log('about to send error : ', error);
@@ -384,6 +375,7 @@ const sendError = (error, mic) => {
   }
   console.groupEnd();
 };
+
 const sendStatus = () => {
   console.group('Status Manager Send Status');
   console.log('about to send');
@@ -475,8 +467,7 @@ const takeControl = () => {
 
   
 };
-console.log('SM - finished intialisation process');
-console.groupEnd();
+
    
 
 

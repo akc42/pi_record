@@ -20,6 +20,8 @@
 
 function remoteLog(str,id) {
   if (str.length > 0) {
-    fetch(`/api/${id}/log/?` + encodeURIComponent(str));
+    const encoded = encodeURIComponent(str);
+    const subid = id;
+    fetch(`/api/${subid}/log/?${encoded}` );
   }
 }

@@ -77,7 +77,7 @@ class RecApp extends LitElement {
     this._statusMessage = this._statusMessage.bind(this);
     this._visibilityChange = this._visibilityChange.bind(this);
 
-    document.addEventListener('visibility', this._visibilityChange);
+    document.addEventListener('visibilitychange', this._visibilityChange);
     this.link = document.createElement('a');
 
   }
@@ -156,13 +156,10 @@ class RecApp extends LitElement {
               case 'Control':
                 this.state = 'Req Rec';
                 break;
-              case 'Sleep':
-                this.state = 'Awaken';
-                break;
             }
           }
           break;
-        case 'Sleep':
+        case 'Hibernate':
           this.state = 'Sleep'
           break;
         default:
@@ -315,10 +312,6 @@ class RecApp extends LitElement {
             this.timer = 0;
           }
           this.mic = ''; //will shut down the volume stream
-          break;
-        case 'Awaken':
-          if (this.timer === 0) this.timer = setInterval(() => this.seconds++, 1000);
-          this.state = 'Record';
           break;
         default: 
           
@@ -588,7 +581,12 @@ class RecApp extends LitElement {
         this.mic = value.mic;
         if (value.mode === 'Unknown') {
           console.group('Mode sending');
-          console.log('mode ', this.mode);
+          console.log('MS - mode ', this.mode);
+          if (this.target !== 'Record') {
+            console.log('MS - target set to mode from ', this.target);
+            //might be in startup mode, so lets set target
+            this.target = this.mode;
+          }
           this.worker.postMessage(['mode', this.mode])
           console.groupEnd();
         } else {
@@ -605,9 +603,12 @@ class RecApp extends LitElement {
         this.mics = value;
         break;
       case 'kill':
+        this.worker.terminate();
+        delete this.worker;
         this.target = 'Close';
+        break;
       case 'sleep':
-        this.state = 'Sleep';
+        this.target = 'Hibernate';
         break;
       default:
         console.warn('Unknown Function ', func, ' received from worker');
@@ -622,8 +623,12 @@ class RecApp extends LitElement {
       console.groupEnd();
     } else {
       console.group('Awaken');
-      console.log('sending awaken to worker')
-      this.worker.postMessage(['awaken','']);
+      if (this.target === 'Hibernate') {
+        console.log('sending awaken to worker')
+        this.worker.postMessage(['awaken','']);  
+      }
+      console.log('AW set target to initialise');
+      this.target = 'Initialise';
       console.groupEnd();
     }     
   }
