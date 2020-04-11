@@ -41,8 +41,18 @@
   const etag = require('etag');
   const logger = require('./logger');
   const contentDisposition = require('content-disposition');
-  const {v4: uuidv4} = require('uuid');
-
+// see https://stackoverflow.com/a/52171480/438737
+  const cyrb53 = function(str, seed = 0) {
+    let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+    for (let i = 0, ch; i < str.length; i++) {
+        ch = str.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ h1>>>16, 2246822507) ^ Math.imul(h2 ^ h2>>>13, 3266489909);
+    h2 = Math.imul(h2 ^ h2>>>16, 2246822507) ^ Math.imul(h1 ^ h1>>>13, 3266489909);
+    return 4294967296 * (2097151 & h2) + (h1>>>0);
+};
 
 
   const setTimeoutPromise = util.promisify(setTimeout);
@@ -257,7 +267,11 @@
       });
       router.get('/subscribeid', (req,res) => {
         res.statusCode = 200;
-        const uuid = uuidv4();
+        /*
+          we use a one way hash of the clients ip address to give them a repeatable client id which, at least for the life
+          of a recording will be the same on every request
+        */
+        const uuid = cyrb53(req.socket.remoteAddress.toString()).toString(16);
         logger('api', 'Subscribe id supplied: ' + uuid);
         res.end(JSON.stringify({state: true, uuid: uuid, renew: parseInt(process.env.RECORDER_RENEW_TIME,10)}));
       });
