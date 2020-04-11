@@ -37,6 +37,7 @@
   const Recorder = require('./recorder');
   const util = require('util');
   const url = require('url');
+  const querystring = require('querystring');
   const etag = require('etag');
   const logger = require('./logger');
   const contentDisposition = require('content-disposition');
@@ -260,9 +261,9 @@
         logger('api', 'Subscribe id supplied: ' + uuid);
         res.end(JSON.stringify({state: true, uuid: uuid, renew: parseInt(process.env.RECORDER_RENEW_TIME,10)}));
       });
-      router.get('/api/log',(req,res) => {
+      router.get('/api/:client/log',(req,res) => {
         const objUrl = url.parse(req.url)
-        logger('log', objUrl.query.logstring);
+        logger('log', querystring.unescape(objUrl.query), req.params.client);
         res.end();
       } );
       router.use('/', serveFile);

@@ -28,10 +28,13 @@
     log: chalk.yellowBright
   };
 
-  function logger(level, message) {
+  function logger(level, message, client) {
     let logLine = '';
     if (process.env.REC_NOLOG === undefined) {
       if (process.env.REC_LOGNODATE === undefined) logLine += new Date().toISOString() + ': ';
+      if (client) {
+        logLine += COLOURS['api'](client + ': ');
+      }
       logLine += COLOURS[level](message);
       //eslint-disable-next-line no-console
       console.log(logLine.trim());

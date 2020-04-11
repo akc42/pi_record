@@ -18,8 +18,8 @@
     along with Recorder.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-function remoteLog(str) {
+function remoteLog(str,id) {
   if (str.length > 0) {
-    fetch('/api/log?logstring=' + encodeURIComponent(str));
+    fetch(`/api/${id}/log/?` + encodeURIComponent(str));
   }
 }
