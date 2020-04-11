@@ -262,6 +262,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
         if (this._recording !== undefined) await this.stop(token);
         this._controlled = '';
         this._channel = '';
+        delete this._client; //so it no longer appears in status messages
         logger('rec', `recorder ${this._name} control released`);
         return true;
       }
