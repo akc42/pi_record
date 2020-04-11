@@ -20,6 +20,7 @@
 const path = require('path');
 const debug = require('debug')('recorder:record');
 const debugctl = require('debug')('recorder:control');
+const debugsts = require('debug')('recorder:rstatus');
 const fs = require('fs').promises;
 const jwt = require('jwt-simple');
 const {spawn} = require('child_process');
@@ -101,6 +102,15 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
     }
 
     get status () {
+      debugsts('Status Read ', {
+        connected: true,
+        name: this._name,
+        taken: this.controlled,
+        client: this._client,
+        recording : this._recording !== undefined,
+        file: this._basename
+       
+      });
       return {
         connected: true,
         name: this._name,

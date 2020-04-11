@@ -29,7 +29,6 @@ import './rec-lcd.js';
 import './rec-record-button.js';
 import './round-switch.js';
 import './rec-reset-button.js';
-import './rec-off-button.js';
 
 
 class RecApp extends LitElement {
@@ -53,8 +52,7 @@ class RecApp extends LitElement {
       rightpeak: {type: String}, //Last peak right channel in fixed(1) format for dbFS
       seconds: {type: Number},  //Seconds since loudness last reset
       code: {type: String},      //Error Code if there is one
-      taken: {type: Boolean},
-      exiting: {type: Boolean}
+      taken: {type: Boolean}
     };
   }
   constructor() {
@@ -69,7 +67,6 @@ class RecApp extends LitElement {
     this.mic = '';
     this.mode = 'Control';   //when we start up we want to take control if we can
     this.colour = 'led-red';
-    console.log('constructor sets state closed');
     this.state = 'Closed';
     this.target = 'Close';
     this.filename = '';
@@ -77,13 +74,10 @@ class RecApp extends LitElement {
     this.seconds = 0;
     this.taken = false; 
     this.timer = 0;
-    this.exiting = true;
     this._statusMessage = this._statusMessage.bind(this);
-    this._unload = this._unload.bind(this);
+    this._visibilityChange = this._visibilityChange.bind(this);
 
-    this.worker = new Worker('status-manager.js');
-    this.worker.addEventListener('message', this._statusMessage);
-    window.addEventListener('beforeunload', this._unload);
+    document.addEventListener('visibility', this._visibilityChange);
     this.link = document.createElement('a');
 
   }
@@ -155,12 +149,21 @@ class RecApp extends LitElement {
             switch(this.state) {
               case 'Closed':
                 this.state = 'No Mic';
+                break;
               case 'Monitor':
                 this.state = 'Req Ctl';
+                break;
               case 'Control':
                 this.state = 'Req Rec';
+                break;
+              case 'Sleep':
+                this.state = 'Awaken';
+                break;
             }
           }
+          break;
+        case 'Sleep':
+          this.state = 'Sleep'
           break;
         default:
           /*
@@ -191,9 +194,20 @@ class RecApp extends LitElement {
           this.recording = false;
           this.controlling = false;
           this.connected = false;
+          if (this.timer !== 0) {
+            console.log('in closed state stopping second timer')
+            clearInterval(this.timer);
+            this.timer = 0;
+          }
           break;
         case 'Initialise':
-          //We don't do anything here, as the first status meesage will take us out of this state
+          if (this.worker === undefined) {
+            console.group('Create am SM Worker')
+            console.log('calling new from Initialise');
+            this.worker = new Worker('status-manager.js');
+            console.groupEnd();
+            this.worker.addEventListener('message', this._statusMessage);
+          }          
           break;
         case 'No Mic':
           if (this.target === 'Close') {
@@ -291,15 +305,26 @@ class RecApp extends LitElement {
             this._getTimer();
           }
           if (this.timer === 0) {
-            console.log('starting second timer');
+            console.log('starting seconds timer');
             this.timer = setInterval(() => this.seconds++, 1000);
           }
-      break;
+          break;
+        case 'Sleep':
+          if (this.timer !== 0) {
+            clearInterval(this.timer);
+            this.timer = 0;
+          }
+          this.mic = ''; //will shut down the volume stream
+          break;
+        case 'Awaken':
+          if (this.timer === 0) this.timer = setInterval(() => this.seconds++, 1000);
+          this.state = 'Record';
+          break;
         default: 
           
           /* 
             We had an error - so will display it, but target
-            we lead the way out
+            will lead the way out
           */
           this.colour='led-red';
           this.target = `error-${this.target}`;
@@ -327,7 +352,7 @@ class RecApp extends LitElement {
           this.recording = false; //this will reset the state or error
           this.state = 'Error'
           this.code = 'NoCtl';
-        } else  {
+        } else if (this.state !== 'Closed') {
           this.state = 'Monitor';
         }
       }  
@@ -346,7 +371,7 @@ class RecApp extends LitElement {
         }
       } else if (this.controlling) {
           this.state = 'Control'
-      } else {
+      } else if (this.state !== 'Closed') {
           this.state = 'Monitor';  
       }
     }
@@ -370,6 +395,9 @@ class RecApp extends LitElement {
     }  
     
     super.updated(changed);
+  }
+  firstUpdated() {
+    this.volume = this.shadowRoot.querySelector('#volume');
   }
   render() {
     return html`
@@ -401,20 +429,17 @@ class RecApp extends LitElement {
           grid-gap: 5px;
           grid-template-areas:
             "logo led volume"
-            "logo off volume"
             "button reset volume"
             "mode mic volume"
             "lcd lcd volume";
           grid-template-columns: 4fr 4fr 5fr;
-          grid-template-rows: 0.1fr 1fr 4fr 4fr 6fr;
+          grid-template-rows: 1fr 2fr 2fr 3fr;
 
         }
         rec-led {
           grid-area: led;
         }
-        rec-off-button {
-          grid-area: off;
-        }
+
         rec-switch {
           grid-area: switch;
         }
@@ -458,7 +483,6 @@ class RecApp extends LitElement {
       <div id="case">
         <div id="icon" @click=${this._downloadCert}></div>
         <rec-led .colour=${this.colour} style="--led-size: 12px;"></rec-led>
-        <rec-off-button ?enabled=${this.exiting} ?pushed=${this.exiting} @turn-off=${this._exit}></rec-off-button>
         <rec-record-button ?enabled=${this.controlling} ?pushed=${this.recording} @record-change=${this._recordChange}></rec-record-button> 
         <rec-reset-button ?enabled=${this.controlling && !this.recording} @loud-reset=${this._loudReset}></rec-reset-button> 
         <round-switch title="Mode" id="mode" ?locked=${this.recording || (!this.connected && this.mode === 'Monitor')} .choices=${this.modes} .selected=${this.mode} @selection-change=${this._modeChange}></round-switch>
@@ -489,10 +513,7 @@ class RecApp extends LitElement {
     this.link.click();
 
   }
-  _exit() {
-    this.exiting = true;
-    this._unload();
-  }
+
   async _getTimer() {
     const mic = this.mic
     try {
@@ -535,28 +556,34 @@ class RecApp extends LitElement {
   }
   _statusMessage (e) {
 
-    console.group('Received Message');
+    console.group('UI Received Message');
     const func = e.data[0];
     const value = e.data[1];
-    console.log('Function ', func, ' value ', value);
+    console.log('Function: ', func, ' value ', value);
     switch (func) {
-      case 'subscribeid':
-        this.subscribeid = value;
-        break;
+
       case 'seconds':
         this.seconds = value;
         break;
       case 'close':
-        console.log('setting state closed');
         this.state = 'Closed';
         break;
       case 'error':
         this.state = 'Fail';
         this.code = value;
         break;
+      case 'reset':
+        this.seconds = 0;
+        break;
       case 'status':
-        if (this.state === 'Initialise') {
-          this.state = 'No Mic';
+        switch (this.state) {
+          case 'Closed':
+          case 'Initialise':
+            this.state = 'No Mic';
+            break;
+          case 'Sleep':
+            this.state = 'Awaken';
+            break;
         }
         this.mic = value.mic;
         if (value.mode === 'Unknown') {
@@ -577,15 +604,28 @@ class RecApp extends LitElement {
       case 'mics':
         this.mics = value;
         break;
+      case 'kill':
+        this.target = 'Close';
+      case 'sleep':
+        this.state = 'Sleep';
+        break;
       default:
         console.warn('Unknown Function ', func, ' received from worker');
     }
     console.groupEnd();
   }
-  async _unload() {
-    this.target = 'Close';
-    await fetch(`/api/${this.subscribeid}/done`);
-    this.worker.terminate();     
+  _visibilityChange() {
+    if (document.hidden) {
+      console.group('Sleep');
+      console.log('sending sleep to worker');
+      this.worker.postMessage(['sleep', ''])
+      console.groupEnd();
+    } else {
+      console.group('Awaken');
+      console.log('sending awaken to worker')
+      this.worker.postMessage(['awaken','']);
+      console.groupEnd();
+    }     
   }
 }
 customElements.define('rec-app', RecApp);

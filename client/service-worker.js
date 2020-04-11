@@ -40,6 +40,7 @@ self.addEventListener('install', (event) =>
     '/rec-reset-button.js',
     '/rec-volume.js',
     '/round-switch.js',
+    '/status-manager.js',
     '/subscribeid'   // this is a special url expected to be called once by the service worker to set up a uuid, which is then served from cache
   ])))
 );
@@ -73,10 +74,11 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(caches.open(version).then(cache => cache.match(event.request)));
   } else {
     event.respondWith(
-      fetch(event.request).then(response => caches.match(event.request).then(cache => {
-        cache.put(event.request, response.clone()); 
+      fetch(event.request).then(response => {
+        const responseClone = response.clone();
+        caches.open(version).then(cache => cache.put(event.request, responseClone));
         return response;
-      }).catch(() => response)).catch(() => caches.match(event.request))
+      }).catch(() => caches.open(version).then(cache => cache.match(event.request)))
     );
   }
 });

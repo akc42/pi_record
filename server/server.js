@@ -165,6 +165,7 @@
         debug('got a loudness reset request with params', req.params);
         res.statusCode = 200;
         res.end(JSON.stringify(await req.recorder.reset(req.params.token)));
+        sendStatus('reset',{channel:req.params.channel});
       }); 
       router.get('/api/:channel/:token/start', checkRecorder, async (req,res) => {
         debug('got a start request with params ', req.params);
@@ -259,8 +260,9 @@
         logger('api', 'Subscribe id supplied: ' + uuid);
         res.end(JSON.stringify({state: true, uuid: uuid, renew: parseInt(process.env.RECORDER_RENEW_TIME,10)}));
       });
-      router.get('/api/log/:logstring',(req,res) => {
-        logger('log', req.params.logstring);
+      router.get('/api/log',(req,res) => {
+        const objUrl = url.parse(req.url)
+        logger('log', objUrl.query.logstring);
         res.end();
       } );
       router.use('/', serveFile);

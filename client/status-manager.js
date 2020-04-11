@@ -19,21 +19,24 @@
 */
 //Web worker script to manage status messages.
 
-importScripts('./ticker.js');
+importScripts('./ticker.js','./remotelog.js');
 let subscribeid = '';
 let renewtimer = '';
+let eventSrc;
+console.group('SM - Initialising');
+console.log('SM requesting subscribeid');
 fetch('/subscribeid').then(response =>response.json()).then(({state,uuid,renew}) => {
   console.group('Status Manager - subscribeid response')
   console.log(`state ${state}, renew ${renew}, uuid ${uuid}`);
   if(state) {
     renewtimer = renew;
     subscribeid = uuid;
-    self.postMessage(['subscribeid', subscribeid]);
-    const eventSrc = new EventSource(`/api/${subscribeid}/status`);
+    eventSrc = new EventSource(`/api/${subscribeid}/status`);
     eventSrc.addEventListener('add', eventAdd);
     eventSrc.addEventListener('close', eventClose);
     eventSrc.addEventListener('release', eventRelease);
     eventSrc.addEventListener('remove', eventRemove);
+    eventSrc.addEventListener('reset', eventReset);
     eventSrc.addEventListener('status', eventStatus);
     eventSrc.addEventListener('take', eventTake);
   } else {
@@ -41,17 +44,16 @@ fetch('/subscribeid').then(response =>response.json()).then(({state,uuid,renew})
   }
   console.groupEnd();
 });  
-
+console.log('SM - setting global variables');
 const micstate = {};
 let currentMic = '';
 let altMic = '';
 const mics = [];
 
 
-
-
+console.log('SM - declaring Message Function');
 onmessage = function(e) {
-  console.group('Status Manager Message');
+  console.group('Status Manager Received Message');
   const func = e.data[0];
   const value = e.data[1];
   console.log('Function: ', func, ' with Value ', value);
@@ -113,12 +115,62 @@ onmessage = function(e) {
         sendError('Stop');
       }
       break; 
+    case 'sleep':
+      remoteLog('Sleep Request Received');
+      //we need to look at all the mics.  If we are recording keep going, but if not then we should release control.
+      let foundRecording = false;
+      for(const mic in micstate) {
+        if (micstate[mic].taken && micstate[mic].client === subscribeid) {
+          if (micstate[mic].recording) {
+            remoteLog('Recording on Mic ' + mic);
+            foundRecording = true;
+          } else {
+            remoteLog('Releasing Mic ' + mic)
+            //we must release any taken mics if we are not recording on them
+            const savedMic = currentMic;
+            currentMic = mic;
+            releaseControl();
+            currentMic = savedMic; 
+          }
+        }
+      }
+      eventSrc.removeEventListener('add', eventAdd);
+      eventSrc.removeEventListener('close', eventClose);
+      eventSrc.removeEventListener('release', eventRelease);
+      eventSrc.removeEventListener('remove', eventRemove);
+      eventSrc.removeEventListener('reset', eventReset);
+      eventSrc.removeEventListener('status', eventStatus);
+      eventSrc.removeEventListener('take', eventTake);
+
+      if (!foundRecording) { 
+        remoteLog('Shut Down ' + subscribeid);
+        callApi('done', subscribeid); //tell the server we are going
+        eventSrc.close();
+        self.postMessage(['kill','']); //ask the ui to shut down (and shut me too);
+      } else {
+        remoteLog('Telling Client to Sleep');
+        eventSrc.close();
+        self.postMessage(['sleep', currentMic]);
+      }
+      break;
+    case 'awaken':
+      remoteLog('Awaken Request Recieved');
+      eventSrc = new EventSource(`/api/${subscribeid}/status`);
+      eventSrc.addEventListener('add', eventAdd);
+      eventSrc.addEventListener('close', eventClose);
+      eventSrc.addEventListener('release', eventRelease);
+      eventSrc.addEventListener('remove', eventRemove);
+      eventSrc.addEventListener('reset', eventReset);
+      eventSrc.addEventListener('status', eventStatus);
+      eventSrc.addEventListener('take', eventTake);  
+      break;
     default:
       console.warn('Web Worker received unknown function ', func);
   }
   console.groupEnd();
 
 }
+console.log('SM - declaring api function');
 const callApi = async (func,channel,token) => {
   try {
     const response = await fetch(`/api/${channel}${token? '/' + token : ''}/${func}`);
@@ -131,7 +183,7 @@ const callApi = async (func,channel,token) => {
   return {state: false};
 };
  
-
+console.log('SM - declaring eventSrc handlers');
 
 const eventAdd = (e) => {
   try {
@@ -182,7 +234,7 @@ const eventRelease = (e) => {
     const {channel} = JSON.parse(e.data);     
     Object.assign(micstate[channel], {taken :false, client: '', token:'', controlling: false, recording: false});
     if (micstate[channel].ticker !== undefined) micstate[channel].ticker.destroy();
-    sendStatus
+    sendStatus();
   } catch (e) {
     console.warn('Error in parsing Event Release:', e);
     sendError('Rlse')
@@ -206,6 +258,16 @@ const eventRemove = (e) => {
   } catch (e) {
     console.warn('Error in parsing Event Remove:', e);
     sendError('Rmve');
+  }
+};
+
+const eventReset = (e) => {
+  try {
+    const {channel} = JSON.parse(e.data);
+    if (channel === currentMic) self.postMessage(['reset', channel]);
+  } catch (e) {
+    console.warn('Error in parsing Event Reset', e);
+    sendError('Rset');
   }
 }
 const eventStatus = (e) => {
@@ -286,6 +348,7 @@ const eventTake = (e) => {
 
 }
 
+console.log('SM - declaring operational functions');
 
 const loudReset = () => {
   const mic = currentMic
@@ -368,7 +431,9 @@ const stopRecording = () => {
 const takeControl = () => {
   const mic = currentMic;
   callApi('take', mic, subscribeid).then( async ({state,token}) => {
+    console.group('SM - Take Control')
     if (state) {
+      console.log('SM - take positive response with token ', token );
       Object.assign(micstate[mic], {
         token: token, 
         taken: true, 
@@ -378,11 +443,15 @@ const takeControl = () => {
       sendStatus();
       try {
         while(true) {
+          console.log('SM - take -awaiting next tick');
           await micstate[mic].ticker.nextTick;
+          console.log('SM - take got tick, about to renew');
           const {state, token} = await callApi('renew', mic, micstate[mic].token);
           if (state) {
+            console.log('SM - take positive renew with token ', token);
             micstate[mic].token = token;
           } else {
+            console.log('SM - take negative renew');
             micstate[mic].token = '';
             if (micstate[mic].taken && micstate[mic].client === subscribeid) {
               Object.assign(micstate[mic], {taken: false, client: ''});
@@ -393,16 +462,21 @@ const takeControl = () => {
         }
 
       } catch(err) {
+        console.log('SM - take - ticker destroyed');
         //someone closed the ticker
         delete micstate[mic].ticker;
       }
     } else {
+      console.log('SM - take negative respoonse');
       sendError('Await R', mic);
     }
+    console.groupEnd();
   });
+
+  
 };
-
-
+console.log('SM - finished intialisation process');
+console.groupEnd();
    
 
 
