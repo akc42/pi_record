@@ -24,7 +24,8 @@ let subscribeid = '';
 let renewtimer = '';
 let eventSrc;
 
-fetch('/subscribeid').then(response =>response.json()).then(({state,uuid,renew}) => {
+
+fetch('/api/subscribeid').then(response =>response.json()).then(({state,uuid,renew}) => {
   console.group('Status Manager - subscribeid response')
   console.log(`state ${state}, renew ${renew}, uuid ${uuid}`);
   if(state) {

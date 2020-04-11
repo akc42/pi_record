@@ -40,8 +40,7 @@ self.addEventListener('install', (event) =>
     '/rec-reset-button.js',
     '/rec-volume.js',
     '/round-switch.js',
-    '/status-manager.js',
-    '/subscribeid'   // this is a special url expected to be called once by the service worker to set up a uuid, which is then served from cache
+    '/status-manager.js'
   ])))
 );
 self.addEventListener('activate', (event) => {
@@ -60,9 +59,6 @@ self.addEventListener('fetch', (event) => {
   const requestURL = new URL(event.request.url);
   if (/^\/api\//i.test(requestURL.pathname)) {
     event.respondWith(fetch(event.request)); //just pass straight through
-  } else if('/subscribeid'  === requestURL.pathname) {
-    //special value to be always returned from the cache.
-    event.respondWith(caches.open(version).then(cache => cache.match(event.request)));
   } else {
     event.respondWith(
       fetch(event.request).then(response => {

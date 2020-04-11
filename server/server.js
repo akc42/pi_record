@@ -265,7 +265,7 @@
 
         }
       });
-      router.get('/subscribeid', (req,res) => {
+      router.get('/api/subscribeid', (req,res) => {
         res.statusCode = 200;
         /*
           we use a one way hash of the clients ip address to give them a repeatable client id which, at least for the life
