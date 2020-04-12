@@ -25,3 +25,5 @@ function remoteLog(str,id) {
     fetch(`/api/${subid}/log/?${encoded}` );
   }
 }
+
+export default remoteLog;

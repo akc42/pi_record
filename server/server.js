@@ -183,9 +183,10 @@
         res.statusCode = 200;
         res.end(JSON.stringify(await req.recorder.record(req.params.token)));
       });
-      router.get('/api/:client/status', (req,res) => {
+      router.get('/api/status', (req,res) => {
         if (req.headers.accept && req.headers.accept == 'text/event-stream') {
-          const client = req.params.client;
+          //we make our unique client id from their ip address
+          const client = cyrb53(req.socket.remoteAddress.toString()).toString(16);
           const response = res;
           debug('/api/status received creating/reusing channel ', client);
           res.writeHead(200, {
@@ -203,10 +204,13 @@
             if (subscribedChannels[client] !== undefined) delete subscribedChannels[client].response;
             //we don't do anything else as they may come back and we need to have the correct picture
           });
+          //before anything else we send the client info to the user (should wake him up if asleep)
+          sendstatus('newid', {client: client, renew: parseInt(process.env.RECORDER_RENEW_TIME,10)}, response);
           const status = {
             scarlett: recorders.scarlett !== undefined? recorders.scarlett.status : {connected: false},
             yeti: recorders.yeti !== undefined? recorders.yeti.status :{connected: false}
           };
+          //then send the current status of all the microphones.
           sendStatus('status', status, response);
 
         } else {
@@ -264,16 +268,6 @@
           res.end();
 
         }
-      });
-      router.get('/api/subscribeid', (req,res) => {
-        res.statusCode = 200;
-        /*
-          we use a one way hash of the clients ip address to give them a repeatable client id which, at least for the life
-          of a recording will be the same on every request
-        */
-        const uuid = cyrb53(req.socket.remoteAddress.toString()).toString(16);
-        logger('api', 'Subscribe id supplied: ' + uuid);
-        res.end(JSON.stringify({state: true, uuid: uuid, renew: parseInt(process.env.RECORDER_RENEW_TIME,10)}));
       });
       router.get('/api/:client/log',(req,res) => {
         const objUrl = url.parse(req.url)
