@@ -17,8 +17,8 @@
     You should have received a copy of the GNU General Public License
     along with Recorder.  If not, see <http://www.gnu.org/licenses/>.
 */
-const version = 'recorder-v1'
-
+const version = 'recorder-v2'
+const api = /^\/api\/(\w+)\/(volume|timer|status|done|log|warn|token|((\S+)\/(take|start|renew|release|stop)))$/i;
 self.addEventListener('install', (event) => 
   event.waitUntil(caches.open(version).then( cache => cache.addAll([
     '/',
@@ -40,7 +40,7 @@ self.addEventListener('install', (event) =>
     '/rec-reset-button.js',
     '/rec-volume.js',
     '/round-switch.js',
-    '/status-manager.js'
+    '/ticker.js'
   ])))
 );
 self.addEventListener('activate', (event) => {
@@ -58,6 +58,25 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const requestURL = new URL(event.request.url);
   if (/^\/api\//i.test(requestURL.pathname)) {
+    const matches = api.exec(requestURL.pathname);
+    switch (matches[2]) {
+      case 'volume':
+      case 'status':
+        break;  //do nothing at all, let brower handle it entirely
+      case 'log':
+      case 'warn':
+        event.respondWith(fetch(event.request).then(response).catch(() => new Response('',{status:200})));//pass through if can else just pretend it was OK 
+        break;
+      default:
+        //normally let the brower respond, but if it can't for some reason (like its offline) send a {state: false} response
+        event.respondWith(
+          fetch(event.request).then(response).catch(() => new Response(JSON.stringify({state: false},{status:200, headers: {
+            'Cache-Control': 'no-cache',
+            'Content-Type': 'application/json'
+          }})))
+        );
+
+    }
     event.respondWith(fetch(event.request)); //just pass straight through
   } else {
     event.respondWith(
