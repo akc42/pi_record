@@ -22,8 +22,7 @@
 
 import { LitElement, html } from '../lit/lit-element.js';
 
-import Ticker from './tickker.js';
-import remoteLog from './remotelog.js';
+import Ticker from './ticker.js';
 
 import './rec-volume.js';
 import './rec-led.js';
@@ -78,8 +77,10 @@ class RecApp extends LitElement {
     this.seconds = 0;
     this.taken = false; 
     this.timer = 0;
-    this.client = '';
+    this.client = Date.now().toString(16); //Make a default ClientID for Logging before we get going.
     this.renew = 60; //start with a low number, so we are over zealous, be we will probably increase
+    this.log = true, //start with an assumption we are going to log, server will stop us if it wants and wont log 
+    this.warn = true, //anyway if it is going to tell us to stop later
  
     this._eventAdd = this._eventAdd.bind(this);
     this._eventClose  = this._eventClose.bind(this);
@@ -89,7 +90,6 @@ class RecApp extends LitElement {
     this._eventReset = this._eventReset.bind(this);
     this._eventStatus = this._eventStatus.bind(this);
     this._eventTake = this._eventTake.bind(this);
-    this._statusMessage = this._statusMessage.bind(this);
     this._visibilityChange = this._visibilityChange.bind(this);
 
     document.addEventListener('visibilitychange', this._visibilityChange);
@@ -107,13 +107,11 @@ class RecApp extends LitElement {
   }
 
   updated(changed) {
-    console.group('Updated changed properties')
+
     if (changed.has('target')) {
-      console.group('Target Change')
-      console.log('from ', changed.get('target'), ' to ', this.target);
+      this._remoteLog(`Target Changed from ${changed.get('target')} to ${this.target}`);
       switch (this.target) {
         case 'Close':
-          console.log('Target Change setting State Closed');
           this.state = 'Closed';
           break;
         case 'Initialise':
@@ -121,7 +119,6 @@ class RecApp extends LitElement {
           break;
         case 'Monitor': 
           if (this.mode === 'Control') {
-            console.log('change target to Control');
             this.target = 'Control';
           } else {
             switch(this.state) {
@@ -141,7 +138,6 @@ class RecApp extends LitElement {
           break;
         case 'Control':
           if (this.mode === 'Monitor') {
-            console.log('change target to Monitor');
             this.target = 'Monitor';
           } else {
             switch (this.state) {
@@ -159,7 +155,6 @@ class RecApp extends LitElement {
           break;
         case 'Record': 
           if (this.mode === 'Monitor' || !this.controlling) {
-            console.log('change target to monitor');
             this.target = 'Monitor';
           } else {
             switch(this.state) {
@@ -171,6 +166,9 @@ class RecApp extends LitElement {
                 break;
               case 'Control':
                 this.state = 'Req Rec';
+                break;
+              case 'Sleep':
+                this.state = 'Initialise';
                 break;
             }
           }
@@ -186,11 +184,11 @@ class RecApp extends LitElement {
           const mic = this.mic; 
           const code = this.code;
           const nextTarget = this.target.replace(/^error-(.*)$/,'$1');
-          console.log('Change target to ', nextTarget, ' in 5 seconds');
+          this._remoteLog(`Change target to ${nextTarget} in 5 seconds`);
           setTimeout(() =>{
             if (mic === this.mic) {
               //we are still on the same mic
-              console.log('still on same mic changing target to ', nextTarget, ' after 5 seconds');
+              this._remoteLog(`still on same mic changing target to ${nextTarget} after 5 seconds`);
               this.target = nextTarget;
               this.state = 'No Mic';
               if (code === this.code) {
@@ -198,6 +196,7 @@ class RecApp extends LitElement {
                 setTimeout(()=>{
                   if (code === this.code) {
                     //still not changed, so we can reset it
+                    this._remoteLog(`noone changed code ${code} in 35 seconds so resetting it`);
                     this.code = '';
                   }
                 },30000);
@@ -206,12 +205,10 @@ class RecApp extends LitElement {
             }
           },5000);
       }
-      console.groupEnd();
     }
 
     if (changed.has('state')) {
-      console.group('State Change');
-      console.log('from ',changed.get('state'), ' to ', this.state);
+      this._remoteLog(`State Changed from ${changed.get('state')} to ${this.state}`);
       switch (this.state) {
         case 'Closed' :
           this.colour = 'led-red';
@@ -219,15 +216,12 @@ class RecApp extends LitElement {
           this.controlling = false;
           this.connected = false;
           if (this.timer !== 0) {
-            console.log('in closed state stopping second timer')
             clearInterval(this.timer);
             this.timer = 0;
           }
           break;
         case 'Initialise':
           if (this.eventSrc === undefined) {
-            console.group('Create an Event Source')
-            console.log('calling new from Initialise');
             this.eventSrc = new EventSource(`/api/status`);
             this.eventSrc.addEventListener('add', this._eventAdd);
             this.eventSrc.addEventListener('close', this._eventClose);
@@ -249,7 +243,6 @@ class RecApp extends LitElement {
             this.seconds = 0;
           }
           if (this.timer !== 0) {
-            console.log('stopping second timer')
             clearInterval(this.timer);
             this.timer = 0;
           }
@@ -269,7 +262,6 @@ class RecApp extends LitElement {
                 this._getTimer();
               }
               if (this.timer === 0) {
-                console.log('starting second timer');
                 this.timer = setInterval(() => this.seconds++, 1000);
               }
             }
@@ -299,13 +291,11 @@ class RecApp extends LitElement {
         case 'Control' :
           
           if (!this.controlling) {
-            console.log('Change to Control but not controlling');
             this.state = 'Error';
             this.code = 'NoCtl'
           } else {
             this.colour = 'led-blue';
             if (this.timer === 0) {
-              console.log('starting second timer');
               this.timer = setInterval(() => this.seconds++, 1000);
             }
             //go get the time, because we might have transitioned from recording to here,
@@ -321,7 +311,7 @@ class RecApp extends LitElement {
           break;
         case 'Req Rec' :
           if (!this.recording) {
-            this._sendCmd('record');
+            this._startRecording();
           } else {
             this.state = 'Record';
           }
@@ -329,14 +319,12 @@ class RecApp extends LitElement {
         case 'Record':
           if (!this.recording) {
 
-            console.log('Record but no recording');
             this.state = 'Error';
             this.code = 'NoRec'
           } else {
             this._getTimer();
           }
           if (this.timer === 0) {
-            console.log('starting seconds timer');
             this.timer = setInterval(() => this.seconds++, 1000);
           }
           break;
@@ -356,22 +344,21 @@ class RecApp extends LitElement {
           this.colour='led-red';
           this.target = `error-${this.target}`;
       }
-      console.groupEnd();
     } 
 
     if (changed.has('connected') && changed.get('connected') !== undefined) {
-      console.log('Connected changed to ', this.connected);
+      this._remoteLog(`Connected changed to ${this.connected}`);
       if (this.connected && this.state === 'No Mic') this.state = 'Monitor';
       if (!this.connected && this.state !== 'Closed' && this.state !== 'Initialise') this.state = 'No Mic';
     }
 
     if(changed.has('taken') && changed.get('taken') !== undefined) {
-      console.log('Taken has changed to ', this.taken);
+      this._remoteLog(`Taken has changed to ${this.taken}`);
       if (this.state === 'Await R' && !this.taken) this.state = 'Monitor';
     }
 
     if (changed.has('controlling') && changed.get('controlling') !== undefined) {
-      console.log('Controlling Changed to ', this.controlling);
+      this._remoteLog(`Controlling Changed to ${this.controlling}`);
       if (this.controlling) {
         if (this.state === 'Req Ctl') this.state = 'Control';
       } else {
@@ -386,10 +373,9 @@ class RecApp extends LitElement {
     }
 
     if(changed.has('recording') && changed.get('recording') !== undefined) {
-      console.log('Recording Changed to ', this.recording);
+      this._remoteLog(`Recording Changed to ${this.recording}`);
       if (this.recording) {
         if (!this.controlling) {
-          console.log('Recording Change to on, error because controlling not set')
           this.state = 'Error';
           this.code = 'NoCtl';
         } else {
@@ -404,20 +390,20 @@ class RecApp extends LitElement {
     }
 
     if (changed.has('mode') && this.mode.length > 0) {
-      console.log('Mode changed to ', this.mode);
+      this._remoteLog(`Mode changed to ${this.mode}`);
       if (this.mode === 'Monitor') {
         this.target = 'Monitor';
       } else if (this.target !== 'Record') {  //Only record stays were it is
         this.target = 'Control';
       }
+      
     }
 
     if(changed.has('mic') && this.mic.length > 0) {
-      console.log('Mic change to ', this.mic);
+      this._remoteLog(`Mic change to ${this.mic}`);
       //Just make sure we have the time if the new mic is connected
       if(this.connected) this._getTimer();
     }  
-    console.groupEnd();
     super.updated(changed);
   }
   firstUpdated() {
@@ -530,13 +516,13 @@ class RecApp extends LitElement {
       </div>
     `;
   }
-  _callApi(func,channel,token) {
+  async _callApi(func,channel,token) {
     try {
       const response = await fetch(`/api/${channel}${token? '/' + token : ''}/${func}`);
       return await response.json(); 
     } catch(err) {
-      console.warn('Error response to Api Request ', func , ' channel ', channel, ' token ', token, ':' , err);
-      this.state = 'Error';
+      this._remoteWarn(`Error response to Api Request ${func} channel ${channel} token ${token} : ` , err);
+      this.state = 'Fail';
       this.code = 'Comms';
   
     }
@@ -551,8 +537,9 @@ class RecApp extends LitElement {
   }
   _eventAdd(e) {
     try {
-      const initialMicsLength = mics.length;
+      const initialMicsLength = this.mics.length;
       const {channel, name} = JSON.parse(e.data);
+      this._remoteLog(`EV - Add of ${channel} with name of ${name}`)
       if (this.mic.length === 0) {
         this.mic = channel;
       }
@@ -565,26 +552,28 @@ class RecApp extends LitElement {
           name: name,
           mode: 'Unknown',
           recording: false, 
-          filename: ''
+          file: ''
         }
         const micU = channel.charAt(0).toUpperCase() + channel.substring(1);
         if(!this.mics.find(aMic => micU === aMic)) {
           this.mics.push(micU);
         }
       } else Object.assign(this.micstate[channel],{connected: true, name: name});
-      if (initialMicsLength !== mics.length) {
+      if (initialMicsLength !== this.mics.length) {
         this.mics = this.mics.slice();//remake mics so we pick up change
       }
       if (this.altMic.length === 0 && this.mic !== channel && !this.micstate[this.mic].connected) this.altMic = channel;
-      sendStatus();
+      this._setStatus();
     } catch (e) {
-      console.warn('Error in parsing Event Add:', e);
-      sendError('Add');
+      this._remoteWarn('Error in parsing Event Add:', e);
+      this.state = 'Fail';
+      this.code = 'AddS'
     }
   }
   
   _eventClose() {
     //the server is closing down, so reset everything to wait for it to come up again
+    this._remoteLog(`EV - Close`);
     for (const mic in this.micstate) {
       Object.assign(this.micstate[mic], {taken: false , recording: false, contolling: false, connected: false});
       if (this.micstate[mic].ticker !== undefined) this.micstate[mic].ticker.destroy();
@@ -594,29 +583,35 @@ class RecApp extends LitElement {
    };
   _eventNew(e) {
     try {
-      const {client,renew} = JSON.parse(e.data);
+      const {client,renew, warn, log} = JSON.parse(e.data);
       this.client = client;
       this.renew = renew;
+      this.log = log;
+      this.warn = warn;
+      this._remoteLog(`EV - Setting client to ${client} renew to ${renew}`);
     } catch (err) {
-      console.warn('Error in parsing Event New Id:', e);
+      this._remoteWarn('Error in parsing Event New Id:', e);
       this.state = 'Error';
-      this.code = 'NewId';     
+      this.code = 'NewIS';     
     }
   }
   _eventRelease(e) {
     try {
-      const {channel} = JSON.parse(e.data);     
+      const {channel} = JSON.parse(e.data);  
+      this._remoteLog(`EV - Release of ${channel}`)   
       Object.assign(this.micstate[channel], {taken :false, client: '', token:'', controlling: false, recording: false});
       if (this.micstate[channel].ticker !== undefined) this.micstate[channel].ticker.destroy();
-      sendStatus();
+      this._setStatus();
     } catch (e) {
-      console.warn('Error in parsing Event Release:', e);
-      sendError('Rlse')
+      this._remoteWarn('Error in parsing Event Release:', e);
+      this.state = 'Fail';
+      this.code = 'RlseS';
     }
   }
   _eventRemove(e) {
     try {
       const {channel} = JSON.parse(e.data);
+      this._remoteLog(`EV - Remove of Channel ${channel}`);
       Object.assign(this.micstate[channel], {taken: false, client: '', token: '', connected:false, controlling: false, recording:false});
       if (this.micstate[channel].ticker !== undefined) this.micstate[channel].ticker.destroy();
       if (this.altMic === channel) {
@@ -628,26 +623,30 @@ class RecApp extends LitElement {
           }
         }
       }
-      sendStatus();
+      this._setStatus();
     } catch (e) {
-      console.warn('Error in parsing Event Remove:', e);
-      sendError('Rmve');
+      this._remoteWarn('Error in parsing Event Remove:', e);
+      this.state = 'Fail';
+      this.code = 'RmveS'
     }
   }
   
   _eventReset(e) {
     try {
       const {channel} = JSON.parse(e.data);
-      if (channel === this.mic) self.postMessage(['reset', channel]);
+      this._remoteLog(`EV - Reset received for channel ${channel}`);
+      if (channel === this.mic) this.seconds = 0;
     } catch (e) {
-      console.warn('Error in parsing Event Reset', e);
-      sendError('Rset');
+      this._remoteWarn('Error in parsing Event Reset', e);
+      this.status = 'Fail';
+      this.code = 'Reset';
     }
   }
   _eventStatus(e) {
     try {
-      const initialMicsLength = mics.length;
+      const initialMicsLength = this.mics.length;
       const status = JSON.parse(e.data);
+      this._remoteLog(`EV - Status ${e.data}`);
       let possibleMic = '';
       let firstMic = '';
       for (const mic in status) {
@@ -669,20 +668,28 @@ class RecApp extends LitElement {
             name: name,
             mode: 'Unknown',
             recording: false, 
-            filename: ''
+            file: ''
     
           }, status[mic]);
   
         } else {
           if (status[mic].name !== undefined && status[mic].name.length === 0) delete status[mic].name; //don't overwrite a name with blank once we have captured it.
           const controlling = status[mic].connected && status[mic].taken && status[mic].client === this.client;
-          Object.assign(this.micstate[mic], status[mic]);
+          const recording = controlling && status[mic].recording
+          const state = {recording: recording};
+          if (!status[mic].connected) {
+            //no longer connected - so other stuff we want to zero out
+            state.taken = false;
+            state.token = ''
+            state.client = ''
+          }
+          Object.assign(this.micstate[mic], status[mic], state);;
           if (!controlling && this.micstate[mic].ticker !== undefined) this.micstate[mic].ticker.destroy(); 
   
         }
         const micU = mic.charAt(0).toUpperCase() + mic.substring(1);
-        if(!mics.find(aMic => micU === aMic)) {
-          mics.push(micU);
+        if(!this.mics.find(aMic => micU === aMic)) {
+          this.mics.push(micU);
         }
       }
       if (this.mic.length === 0) {
@@ -700,24 +707,27 @@ class RecApp extends LitElement {
           }
         }
       }
-      if (initialMicsLength !== mics.length) {
-        self.postMessage(['mics', mics]);
+      if (initialMicsLength !== this.mics.length) {
+        this.mics = this.mics.slice();
       }
-      sendStatus();
+      this._setStatus();
     } catch (e) {
-      console.warn('Error in parsing Event Status:', e);
-      sendError('Stat')
+      this._remoteWarn('Error in parsing Event Status:', e);
+      this.state = 'Fail';
+      this.code = 'StatS';
     }
   }
   
   _eventTake(e) {
     try {
       const {channel,client} = JSON.parse(e.data);
+      this._remoteLog(`EV - Take ${channel} for client ${client}`);
       Object.assign(this.micstate[channel], {client:client, taken: true});
-      sendStatus();
+      this._setStatus();
     } catch (err) {
-      console.warn('Error in parsing Event Remove:', err);
-      sendError('ETake');
+      this._remoteWarn('Error in parsing Event Remove:', err);
+      this.state = 'Fail';
+      this.code = 'TakeS';
     }
   
   }
@@ -729,16 +739,16 @@ class RecApp extends LitElement {
       const {time} = await response.json();
       if (mic === this.mic) this.seconds = time;
     } catch(err) {
-      console.warn('Error response ', err, ' to time request');
-      this.state = 'Error';
+      this._remoteWarn('Error response to time request', err);
+      this.state = 'Fail';
       this.code = 'Timer';
     }
   }
   async _loudReset() {
     if (this.controlling && !this.recording) {
-      if (this.micstate[currentMic].taken && this.micstate[this.mic].client === this.client && !this.micstate[this.mic].recording) {
+      if (this.micstate[this.mic].taken && this.micstate[this.mic].client === this.client && !this.micstate[this.mic].recording) {
         const mic = this.mic;
-        const {state, timer} = await this.callApi('reset',mic, micstate[mic].token);
+        const {state, timer} = await this._callApi('reset',mic, this.micstate[mic].token);
         if (state && mic === this.mic) this.seconds = timer;
       } else {
         this.state = 'Error';
@@ -748,9 +758,7 @@ class RecApp extends LitElement {
   }
 
   _micChange(e) {
-    console.group('Sending Switch Change')
-    const newMic = e.detail.toLowerCase()
-    console.log('change ', newMic);
+    const newMic = e.detail.toLowerCase();
     //check that the value received is a known mic
     if (this.micstate.hasOwnProperty(newMic)) {
       if (this.mic !== newMic) {
@@ -770,10 +778,10 @@ class RecApp extends LitElement {
       this.code = 'Mic'
     }
 
-    console.groupEnd();
   }
   _modeChange(e) {
     this.mode = e.detail;
+    if(this.mic.length > 0) this.micstate[this.mic].mode = this.mode;
   }
   _newLoudness(e) {
     this.loudness = e.detail.integrated;
@@ -792,9 +800,11 @@ class RecApp extends LitElement {
       if (this.micstate[mic].ticker !== undefined) this.micstate[mic].ticker.destroy();
       const {state} = await this._callApi('release', mic, this.micstate[mic].token);
       if (state) {
+        this._remoteLog('API released Control')
         Object.assign(this.micstate[mic], {taken: false, client: ''});
         this._setStatus();
       } else {
+        this._remoteLog('API Failed to Release Control');
         if(mic = this.mic) {
           this.state = 'Error',
           this.code = 'Give';
@@ -805,78 +815,161 @@ class RecApp extends LitElement {
       this.code = 'Give';
     }
   }
-  
-  _sendCmd(cmd) {
-    console.group('Send Command');
-    console.log('sending command ', cmd, ' with mic ', this.mic);
-    this.worker.postMessage([cmd,this.mic]);
-    console.groupEnd();
+  _remoteLog(str) {
+    if (this.log && str.length > 0) {
+      const encoded = encodeURIComponent(str);
+      const subid = this.client;
+      fetch(`/api/${subid}/log/?${encoded}` );
+    }
+  }
+  _remoteWarn(str,e) {
+    if (this.warn && str.length > 0) {
+      const encoded = encodeURIComponent(`${str} - ${e.toString()}`);
+      const subid = this.client;
+      fetch(`/api/${subid}/warn/?${encoded}` );
+    }
+  }
+  async _retrieveToken() {
+    if (this.micstate[this.mic].taken && this.micstate[this.mic].client === this.client) {
+      const mic = this.mic;
+      const {state,token} = await this._callApi('token', mic, this.client );
+      if (state) {
+        this._remoteLog('API Successfully Retrieved Token');
+        Object.assign(this.micstate[mic], {token: token});
+        this._setStatus();
+        
+        this._runTicker(mic);
+      } else {
+        this._remoteLog('API Failed to Retrieve Token');
+        if (this.micstate[mic].ticker !== undefined) this.micstate[mic].ticker.destroy();
+        Object.assign(this.micstate[mic], {token: ''});
+        if (this.micstate[mic].client === this.client) this.micstate[mic].client = ''; //next status update may free mic
+        this._setStatus();
+      }
+    } else {
+      this.state = 'Error';
+      this.code = 'Retr'
+    }
+  }
+  async _runTicker(ticmic) {
+    if (this.micstate[ticmic].taken && this.micstate[ticmic].client === this.client && this.micstate[ticmic].token.length > 0) {
+      const  mic = ticmic;
+      if (this.micstate[mic].ticker === undefined) {
+        this.micstate[mic].ticker = new Ticker(this.renew * 1000) //create a renew ticker 
+      }
+      try {
+        while(true) {
+          await this.micstate[mic].ticker.nextTick;
+          const {state, token} = await callApi('renew', mic, micstate[mic].token);
+          if (state) {
+            this._remoteLog('API Successfully Renewed');
+            micstate[mic].token = token;
+          } else {
+            this._remoteLog('API Failed to Renew');
+            this.micstate[mic].token = '';
+            if (this.micstate[mic].taken && this.micstate[mic].client === this.client) {
+              Object.assign(this.micstate[mic], {taken: false, client: ''});
+            }
+            this._setStatus();
+            this.micstate[mic].ticker.destroy(); //no last as we will invoke immediate catch and want to have completed other stuff first
+          }
+        }
+
+      } catch(err) {
+        //someone closed the ticker
+        delete this.micstate[mic].ticker;
+      }
+    } else {
+      this.state = 'Error';
+      this.code = 'Tick'
+    }
   }
   _setStatus() {
     //purpose of this routine is to manage the various changes that have occurred and set our state accordingly
-    console.group('Set Status');
-    console.log('SS - state before ', this.state);
-    switch (this.state) {
-      case 'Closed':
-      case 'Initialise':
-        this.state = 'No Mic';
-        break;
-      case 'Sleep':
-        this.state = 'Awaken';
-        break;
-    }
-    console.log('SS - state after ', this.state);
-    if (this.micstate[this.mic].mode === 'Unknown') {
-      console.group('Update Micstate Mode');
-      console.log('MS - mode ', this.mode);
-      if (this.target !== 'Record') {
-        console.log('MS - target set to mode from ', this.target);
-        //might be in startup mode, so lets set target
-        this.target = this.mode;
-      }
-      this.micstate[this.mic].mode = this.mode;
-      console.groupEnd();
-    } else {
-      console.log('changing mode from ', this.mode, ' to ', this.micstate[this.mic].mode);
-      this.mode = this.micstate[this.mic].mode;
-    }
-    const alt = micstate[currentMic].connected ? '' : (this.altMic.length > 0 ? micstate[this.altMic].name : ''),
+
+    const alt = this.micstate[this.mic].connected ? '' : (this.altMic.length > 0 ? this.micstate[this.altMic].name : '');
     this.connected = this.micstate[this.mic].connected;
     this.micname = this.micstate[this.mic].name;
     this.taken = this.micstate[this.mic].taken;
-    this.controlling = this.micstate[this.mic].taken && this.micstate[this.mic].client === this.client;
-    this.recording = this.micstate[this.mic].recording;
-    this.filename = (alt.length > 0 && !this.connected)? alt: this.micstate[this.mic].filename;
-    console.groupEnd();
-    }
-    async _startRecording() {
-      if (this.micstate[this.mic].taken && this.micstate[this.mic].client === this.client && !this.micstate[this.mic].recording) {
-        const mic = currentMic;
-        const {state,name} = await this._callApi('start', mic,this.micstate[mic].token);
-        if (state) {
-          Object.assign(this.micstate[mic], {recording: true, filename: name});
-          this._setStatus();
-        } else {
-          if(mic === this.mic) {
-            this.state = 'Fail';
-            this.code = 'Rec';
-          }
-        }
-    
-      } else {
-        this.state = 'Error';
-        this.code = 'Rec';
+    if (this.micstate[this.mic].taken && this.micstate[this.mic].client === this.client) {
+      this.controlling = true;
+      //we ought to be saying we are in control - but do we have the token yet?
+      if(this.micstate[this.mic].token.length === 0) {
+        //probably not got a token because we awoke to find we were already controlling, so go get it
+        this._retrieveToken();
       }
+    } else {
+      this.controlling = false;
     }
-      async _stopRecording() {
-    if (this.micstate[this.mic].taken && this.micstate[this.mic].client === this.client && this.micstate[this.mic].recording) {
-      const mic = currentMic;
-      const {state,kept} = await this._callApi('stop', mic, micstate[mic].token)
-      this.micstate[mic].recording = false;
-      if (!kept) micstate[mic].filename = '';
+    
+    this.recording = this.controlling && this.micstate[this.mic].recording;
+    this.filename = (alt.length > 0 && !this.connected)? alt: this.micstate[this.mic].file;
+    if (this.micstate[this.mic].mode === 'Unknown') {
+      this.micstate[this.mic].mode = this.mode;
+    } else {
+      this.mode = this.micstate[this.mic].mode;
+    }
+    if (this.recording) {
+      this.target = 'Record';
+    } else {
+      this.target = this.mode;
+    }
+    if (this.recording) {
+      this.state = 'Record';
+    } else if (this.controlling) {
+      this.state = 'Control';
+    } else if (this.connected) {
+      this.state = 'Monitor';
+    } else {
+      this.state = 'No Mic';
+    }
+    switch (this.state) {
+      case 'Closed':
+      case 'Initialise':
+        if (this.target !== 'Record') {
+          this.state = 'No Mic';
+        } else {
+          this.state = 'Record';
+        }
+        break;
+      case 'Sleep':
+        this.state = 'Record';
+        break;
+    }
+
+  }
+  async _startRecording() {
+    if (this.micstate[this.mic].taken && this.micstate[this.mic].client === this.client && !this.micstate[this.mic].recording) {
+      const mic = this.mic;
+      const {state,name} = await this._callApi('start', mic,this.micstate[mic].token);
       if (state) {
+        this._remoteLog('API Successfully Started Recording')
+        Object.assign(this.micstate[mic], {recording: true, file: name});
         this._setStatus();
       } else {
+        this._remoteLog('API Failed to Start Recording');
+        if(mic === this.mic) {
+          this.state = 'Fail';
+          this.code = 'Rec';
+        }
+      }
+  
+    } else {
+      this.state = 'Error';
+      this.code = 'Rec';
+    }
+  }
+  async _stopRecording() {
+    if (this.micstate[this.mic].taken && this.micstate[this.mic].client === this.client && this.micstate[this.mic].recording) {
+      const mic = this.mic;
+      const {state,kept} = await this._callApi('stop', mic, this.micstate[mic].token)
+      this.micstate[mic].recording = false;
+      if (!kept) this.micstate[mic].file = '';
+      if (state) {
+        this._remoteLog('API Successfully Stopped Recording');
+        this._setStatus();
+      } else {
+        this._remoteLog('API Failed to Stop Recording')
         this.state = 'Fail';
         this.code = 'Stop';
       }
@@ -891,9 +984,8 @@ class RecApp extends LitElement {
     if (!this.micstate[this.mic].taken) {
       const mic = this.mic;
       const {state,token} = await this._callApi('take', mic, this.client)
-      console.group('Take Control')
       if (state) {
-        console.log('TC - positive response with token ', token );
+        this._remoteLog('API Successfully Took Control');
         Object.assign(this.micstate[mic], {
           token: token, 
           taken: true, 
@@ -901,37 +993,13 @@ class RecApp extends LitElement {
           ticker:  new Ticker(this.renew * 1000) //create a renew ticker 
         });
         this._setStatus();
-        try {
-          while(true) {
-            console.log('TC - awaiting next tick');
-            await this.micstate[mic].ticker.nextTick;
-            console.log('TC - got tick, about to renew');
-            const {state, token} = await callApi('renew', mic, micstate[mic].token);
-            if (state) {
-              console.log('TC - positive renew with token ', token);
-              micstate[mic].token = token;
-            } else {
-              console.log('TC - negative renew');
-              this.micstate[mic].token = '';
-              if (this.micstate[mic].taken && this.micstate[mic].client === this.client) {
-                Object.assign(this.micstate[mic], {taken: false, client: ''});
-              }
-              this._setStatus();
-              this.micstate[mic].ticker.destroy(); //no last as we will invoke immediate catch and want to have completed other stuff first
-            }
-          }
-  
-        } catch(err) {
-          console.log('TC - ticker destroyed');
-          //someone closed the ticker
-          delete this.micstate[mic].ticker;
-        }
+        this._runTicker(mic);
       } else {
+        this._remoteLog('API Failed to Take Control');
         if (mic === this.mic) {
           this.state = 'Await R'; //someone else has it so we have to wait
         }  
       }
-      console.groupEnd();
   
     
     } else {
@@ -940,42 +1008,44 @@ class RecApp extends LitElement {
   }
   _visibilityChange() {
     if (document.hidden) {
-      remoteLog('Page About to Hide', this.client);
       //we need to look at all the mics.  If we are recording keep going, but if not then we should release control.
       let foundRecording = false;
-      for(const mic in micstate) {
-        if (micstate[mic].taken && micstate[mic].client === this.client) {
-          if (micstate[mic].recording) {
-            remoteLog('Still Recording on Mic ' + mic, this.client);
+      for(const mic in this.micstate) {
+        if (this.micstate[mic].taken && this.micstate[mic].client === this.client) {
+          if (this.micstate[mic].recording) {
             foundRecording = true;
           } else {
-            remoteLog('Releasing Mic ' + mic, this.client)
             //we must release any taken mics if we are not recording on them directly, we havn't time to wait
-            fetch(`/api/${this.client}/${this.micstate[mic].token}/release`); 
+            fetch(`/api/${mic}/${this.micstate[mic].token}/release`); 
           }
         }
       }
       this.eventSrc.removeEventListener('add', this._eventAdd);
       this.eventSrc.removeEventListener('close', this._eventClose);
+      this.eventSrc.removeEventListener('newid', this._eventNew);
       this.eventSrc.removeEventListener('release', this._eventRelease);
       this.eventSrc.removeEventListener('remove', this._eventRemove);
       this.eventSrc.removeEventListener('reset', this._eventReset);
       this.eventSrc.removeEventListener('status', this._eventStatus);
       this.eventSrc.removeEventListener('take', this._eventTake);
       if (!foundRecording) { 
-        remoteLog('Not Recording so Shutting Down', this.client);
+        
         fetch(`/api/${this.client}/done`); ; //tell the server we are going
         this.target = 'Close';       
       } else {
-        remoteLog('Recording so Going to Sleep', this.client);
+        this._remoteLog('Hiding but Recording, so Sleeping');
         this.target = 'Hibernate';
       }
       this.eventSrc.close();
-      delete this.this.eventSrc;
+      delete this.eventSrc;
 
     } else {
-      remoteLog(`Awaken Request Received when we were in ${this.state} state after targetting ${this.target}`, this.client); 
-      this.target = 'Initialise';
+      if (this.target === 'Hibernate') {
+        this._remoteLog(`Awaken From Sleep`); 
+        this.target = 'Record';
+      } else {
+        this.target = 'Initialise';
+      }
     }     
   }
 }
