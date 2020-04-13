@@ -191,8 +191,7 @@
           debug('/api/status received creating/reusing channel ', client);
           res.writeHead(200, {
             'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive'
+            'Cache-Control': 'no-cache'
           });
           if (subscribedChannels[client] === undefined) {
             subscribedChannels[client] = {response: response,channels: {}};
@@ -205,7 +204,12 @@
             //we don't do anything else as they may come back and we need to have the correct picture
           });
           //before anything else we send the client info to the user (should wake him up if asleep)
-          sendstatus('newid', {client: client, renew: parseInt(process.env.RECORDER_RENEW_TIME,10)}, response);
+          sendStatus('newid', {
+            client: client, 
+            renew: parseInt(process.env.RECORDER_RENEW_TIME,10),
+            log: process.env.RECORDER_NO_REMOTE_LOG === undefined,
+            warn: process.env.RECORDER_NO_REMOTE_WARN === undefined
+          }, response);
           const status = {
             scarlett: recorders.scarlett !== undefined? recorders.scarlett.status : {connected: false},
             yeti: recorders.yeti !== undefined? recorders.yeti.status :{connected: false}
@@ -247,6 +251,11 @@
         debug('recorder said timer was ', time);
         res.end(JSON.stringify({time: time}));
       });
+      router.get('/api/:channel/:client/token', checkRecorder, (req,res) => {
+        const client = req.params.client;
+        debug('got a token request for channel ', req.recorder.name, ' for client ', client);
+        res.end(JSON.stringify(req.recorder.retrieve(client))); //it will only work if client has control
+      });
       router.get('/api/:channel/volume', checkRecorder, (req, res) => {
         if (req.headers.accept && req.headers.accept == 'text/event-stream') {
           const recorder =req.recorder;
@@ -254,8 +263,7 @@
           debug ('volume subscription received for channel ', recorder.name)
           res.writeHead(200, {
             'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive'
+            'Cache-Control': 'no-cache'
           });
           recorder.subscribe(response);
           debug('wrote headers for volume subscription');
@@ -271,9 +279,14 @@
       });
       router.get('/api/:client/log',(req,res) => {
         const objUrl = url.parse(req.url)
-        logger('log', querystring.unescape(objUrl.query), req.params.client);
+        if (process.env.RECORDER_NO_REMOTE_LOG === undefined) logger('log', querystring.unescape(objUrl.query), req.params.client);
         res.end();
-      } );
+      });
+      router.get('/api/:client/warn',(req,res) => {
+        const objUrl = url.parse(req.url)
+        if (process.env.RECORDER_NO_REMOTE_WARN === undefined) logger('err', querystring.unescape(objUrl.query), req.params.client);
+        res.end();
+      });
       router.use('/', serveFile);
       usb.on('attach', usbAttach);
       usb.on('detach', usbDetach);
