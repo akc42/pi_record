@@ -37,11 +37,22 @@
   const Recorder = require('./recorder');
   const util = require('util');
   const url = require('url');
+  const querystring = require('querystring');
   const etag = require('etag');
   const logger = require('./logger');
   const contentDisposition = require('content-disposition');
-  const {v4: uuidv4} = require('uuid');
-
+// see https://stackoverflow.com/a/52171480/438737
+  const cyrb53 = function(str, seed = 0) {
+    let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+    for (let i = 0, ch; i < str.length; i++) {
+        ch = str.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ h1>>>16, 2246822507) ^ Math.imul(h2 ^ h2>>>13, 3266489909);
+    h2 = Math.imul(h2 ^ h2>>>16, 2246822507) ^ Math.imul(h1 ^ h1>>>13, 3266489909);
+    return 4294967296 * (2097151 & h2) + (h1>>>0);
+};
 
 
   const setTimeoutPromise = util.promisify(setTimeout);
@@ -165,21 +176,22 @@
         debug('got a loudness reset request with params', req.params);
         res.statusCode = 200;
         res.end(JSON.stringify(await req.recorder.reset(req.params.token)));
+        sendStatus('reset',{channel:req.params.channel});
       }); 
       router.get('/api/:channel/:token/start', checkRecorder, async (req,res) => {
         debug('got a start request with params ', req.params);
         res.statusCode = 200;
         res.end(JSON.stringify(await req.recorder.record(req.params.token)));
       });
-      router.get('/api/:client/status', (req,res) => {
+      router.get('/api/status', (req,res) => {
         if (req.headers.accept && req.headers.accept == 'text/event-stream') {
-          const client = req.params.client;
+          //we make our unique client id from their ip address
+          const client = cyrb53(req.socket.remoteAddress.toString()).toString(16);
           const response = res;
           debug('/api/status received creating/reusing channel ', client);
           res.writeHead(200, {
             'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive'
+            'Cache-Control': 'no-cache'
           });
           if (subscribedChannels[client] === undefined) {
             subscribedChannels[client] = {response: response,channels: {}};
@@ -191,10 +203,18 @@
             if (subscribedChannels[client] !== undefined) delete subscribedChannels[client].response;
             //we don't do anything else as they may come back and we need to have the correct picture
           });
+          //before anything else we send the client info to the user (should wake him up if asleep)
+          sendStatus('newid', {
+            client: client, 
+            renew: parseInt(process.env.RECORDER_RENEW_TIME,10),
+            log: process.env.RECORDER_NO_REMOTE_LOG === undefined,
+            warn: process.env.RECORDER_NO_REMOTE_WARN === undefined
+          }, response);
           const status = {
             scarlett: recorders.scarlett !== undefined? recorders.scarlett.status : {connected: false},
             yeti: recorders.yeti !== undefined? recorders.yeti.status :{connected: false}
           };
+          //then send the current status of all the microphones.
           sendStatus('status', status, response);
 
         } else {
@@ -231,6 +251,11 @@
         debug('recorder said timer was ', time);
         res.end(JSON.stringify({time: time}));
       });
+      router.get('/api/:channel/:client/token', checkRecorder, (req,res) => {
+        const client = req.params.client;
+        debug('got a token request for channel ', req.recorder.name, ' for client ', client);
+        res.end(JSON.stringify(req.recorder.retrieve(client))); //it will only work if client has control
+      });
       router.get('/api/:channel/volume', checkRecorder, (req, res) => {
         if (req.headers.accept && req.headers.accept == 'text/event-stream') {
           const recorder =req.recorder;
@@ -238,8 +263,7 @@
           debug ('volume subscription received for channel ', recorder.name)
           res.writeHead(200, {
             'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive'
+            'Cache-Control': 'no-cache'
           });
           recorder.subscribe(response);
           debug('wrote headers for volume subscription');
@@ -253,16 +277,16 @@
 
         }
       });
-      router.get('/subscribeid', (req,res) => {
-        res.statusCode = 200;
-        const uuid = uuidv4();
-        logger('api', 'Subscribe id supplied: ' + uuid);
-        res.end(JSON.stringify({state: true, uuid: uuid, renew: parseInt(process.env.RECORDER_RENEW_TIME,10)}));
-      });
-      router.get('/api/log/:logstring',(req,res) => {
-        logger('log', req.params.logstring);
+      router.get('/api/:client/log',(req,res) => {
+        const objUrl = url.parse(req.url)
+        if (process.env.RECORDER_NO_REMOTE_LOG === undefined) logger('log', querystring.unescape(objUrl.query), req.params.client);
         res.end();
-      } );
+      });
+      router.get('/api/:client/warn',(req,res) => {
+        const objUrl = url.parse(req.url)
+        if (process.env.RECORDER_NO_REMOTE_WARN === undefined) logger('err', querystring.unescape(objUrl.query), req.params.client);
+        res.end();
+      });
       router.use('/', serveFile);
       usb.on('attach', usbAttach);
       usb.on('detach', usbDetach);

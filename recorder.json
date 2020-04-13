@@ -16,7 +16,8 @@
       "env": {
         "DEBUG_COLORS": true,
         "RECORDER_RECORDINGS": "../recordings",
-        "REC_NOLOGDATE": "yes"
+        "REC_NOLOGDATE": "yes",
+        "RECORDER_NO_REMOTE_LOG": "yes"
       }
     }
   ]

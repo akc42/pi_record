@@ -57,7 +57,6 @@ class RecVolume extends LitElement {
     if (changed.has('channel') && this.ctxPk !== undefined && changed.get('channel') !== undefined) {
       //we are not in the start up phase
       if (changed.get('channel').length > 0) {
-        console.log('stopping volume channel because of channel change');
         this._stopChannel(); //there was one running so stop it
       }
       if (this.channel.length > 0 ) this._startChannel(); 
@@ -251,21 +250,15 @@ class RecVolume extends LitElement {
       this.mOffset = mOffset;
       this.animationInProgress = false;
     });
-
-    
   }
-
-
   _startChannel() {
     this.receivedFirstDataMessage = false;
-    console.log(`Starting ${this.channel} volume`);
     this.eventSrc = new EventSource(`/api/${this.channel}/volume`);
     this.eventSrc.addEventListener('message', this._receiveVolumeData);  
     this.eventSrc.addEventListener('close', this._stopChannel);
     this.sOffset = this.mOffset = 464;
   }
   _stopChannel() {
-    console.log(`Stopping ${this.channel} volume`);
     this.eventSrc.close();
     this.eventSrc.removeEventListener('close', this._stopChannel);
     this.eventSrc.removeEventListener('message', this._receiveVolumeData);

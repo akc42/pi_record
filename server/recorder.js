@@ -20,6 +20,7 @@
 const path = require('path');
 const debug = require('debug')('recorder:record');
 const debugctl = require('debug')('recorder:control');
+const debugsts = require('debug')('recorder:rstatus');
 const fs = require('fs').promises;
 const jwt = require('jwt-simple');
 const {spawn} = require('child_process');
@@ -101,6 +102,15 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
     }
 
     get status () {
+      debugsts('Status Read ', {
+        connected: true,
+        name: this._name,
+        taken: this.controlled,
+        client: this._client,
+        recording : this._recording !== undefined,
+        file: this._basename
+       
+      });
       return {
         connected: true,
         name: this._name,
@@ -252,6 +262,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
         if (this._recording !== undefined) await this.stop(token);
         this._controlled = '';
         this._channel = '';
+        delete this._client; //so it no longer appears in status messages
         logger('rec', `recorder ${this._name} control released`);
         return true;
       }
@@ -270,6 +281,13 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
       }
       logger('rec', `recorder ${this._name} failed to renew, so control released`);
       return {state: false };
+    }
+    retrieve(client) {
+      debug('request by client ', client, ' to retrieve their token')
+      if (this.controlled && client === this._client) {
+        return {state: true, token: this._controlled};
+      }
+      return {state: false}
     }
     async stop(token) {
       debug(`Recorder ${this._name} request to stop recording after ${this.timer} secs`);

@@ -17,8 +17,8 @@
     You should have received a copy of the GNU General Public License
     along with Recorder.  If not, see <http://www.gnu.org/licenses/>.
 */
-const version = 'recorder-v1'
-
+const version = 'recorder-v2'
+const api = /^\/api\/(\w+)\/(volume|timer|status|done|log|warn|token|((\S+)\/(take|start|renew|release|stop)))$/i;
 self.addEventListener('install', (event) => 
   event.waitUntil(caches.open(version).then( cache => cache.addAll([
     '/',
@@ -40,7 +40,7 @@ self.addEventListener('install', (event) =>
     '/rec-reset-button.js',
     '/rec-volume.js',
     '/round-switch.js',
-    '/subscribeid'   // this is a special url expected to be called once by the service worker to set up a uuid, which is then served from cache
+    '/ticker.js'
   ])))
 );
 self.addEventListener('activate', (event) => {
@@ -57,26 +57,34 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const requestURL = new URL(event.request.url);
-
   if (/^\/api\//i.test(requestURL.pathname)) {
-    /*
-      I immediately hand these back to the browser to do its own thing
+    const matches = api.exec(requestURL.pathname);
+    switch (matches[2]) {
+      case 'volume':
+      case 'status':
+        break;  //do nothing at all, let brower handle it entirely
+      case 'log':
+      case 'warn':
+        event.respondWith(fetch(event.request).then(response).catch(() => new Response('',{status:200})));//pass through if can else just pretend it was OK 
+        break;
+      default:
+        //normally let the brower respond, but if it can't for some reason (like its offline) send a {state: false} response
+        event.respondWith(
+          fetch(event.request).then(response).catch(() => new Response(JSON.stringify({state: false},{status:200, headers: {
+            'Cache-Control': 'no-cache',
+            'Content-Type': 'application/json'
+          }})))
+        );
 
-      I don't even want to use event.respondWith - mainly because /api/:subscribeid/status and
-      /api/:channel/volume are both event streams with potentially long lives.  I am not sure what
-      would happen if I (the service worker) attempted to get in the middle. It might work - A promise just disappears inside
-      the browser, but since I don't know at this stage I wont risk it.
-    */
-    return;  
-  } else if('/subscribeid'  === requestURL.pathname) {
-    //special value to be always returned from the cache.
-    event.respondWith(caches.open(version).then(cache => cache.match(event.request)));
+    }
+    event.respondWith(fetch(event.request)); //just pass straight through
   } else {
     event.respondWith(
-      fetch(event.request).then(response => caches.match(event.request).then(cache => {
-        cache.put(event.request, response.clone()); 
+      fetch(event.request).then(response => {
+        const responseClone = response.clone();
+        caches.open(version).then(cache => cache.put(event.request, responseClone));
         return response;
-      }).catch(() => response)).catch(() => caches.match(event.request))
+      }).catch(() => caches.open(version).then(cache => cache.match(event.request)))
     );
   }
 });

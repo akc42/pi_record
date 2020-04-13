@@ -17,13 +17,12 @@
     You should have received a copy of the GNU General Public License
     along with Recorder.  If not, see <http://www.gnu.org/licenses/>.
 */
-Ticker = (function() {
+const Ticker = (function() {
   let tickCounter = 0;
   let promiseCounter = 0;
   return class Ticker {
     constructor(frequency) {
       this.tickCounter = ++tickCounter;
-      console.log('Ticker ',this.tickCounter, 'Created');
       this.frequency = frequency;
       this.donePromise = new Promise((resolve,reject) => {
         this.promiseCounter = ++ promiseCounter;
@@ -31,7 +30,6 @@ Ticker = (function() {
         this.rejector = reject;
       });
       this.interval = setInterval(() => {
-        console.log('Ticker ',this.tickCounter, 'Tick');
         this.resolver({tickCounter: this.tickCounter, promiseCounter: this.promiseCounter});
         this.donePromise = new Promise((resolve,reject) => {
           this.promiseCounter = ++ promiseCounter;
@@ -41,13 +39,13 @@ Ticker = (function() {
       }, frequency);
     }
     get nextTick() {
-      console.log('Ticker ',this.tickCounter, 'Waiting');
       return this.donePromise;
     }
     destroy() {
-      console.log('Ticker ',this.tickCounter, 'Destroyed');
       clearInterval(this.interval);
       this.rejector({tickCounter: this.tickCounter, promiseCounter: this.promiseCounter});  //kicks off anyone waiting for this
     }
   };
 })();
+
+export default Ticker;
