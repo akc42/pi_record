@@ -23,7 +23,6 @@ const Ticker = (function() {
   return class Ticker {
     constructor(frequency) {
       this.tickCounter = ++tickCounter;
-      console.log('Ticker ',this.tickCounter, 'Created');
       this.frequency = frequency;
       this.donePromise = new Promise((resolve,reject) => {
         this.promiseCounter = ++ promiseCounter;
@@ -31,7 +30,6 @@ const Ticker = (function() {
         this.rejector = reject;
       });
       this.interval = setInterval(() => {
-        console.log('Ticker ',this.tickCounter, 'Tick');
         this.resolver({tickCounter: this.tickCounter, promiseCounter: this.promiseCounter});
         this.donePromise = new Promise((resolve,reject) => {
           this.promiseCounter = ++ promiseCounter;
@@ -41,11 +39,9 @@ const Ticker = (function() {
       }, frequency);
     }
     get nextTick() {
-      console.log('Ticker ',this.tickCounter, 'Waiting');
       return this.donePromise;
     }
     destroy() {
-      console.log('Ticker ',this.tickCounter, 'Destroyed');
       clearInterval(this.interval);
       this.rejector({tickCounter: this.tickCounter, promiseCounter: this.promiseCounter});  //kicks off anyone waiting for this
     }
