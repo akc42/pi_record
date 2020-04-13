@@ -136,10 +136,8 @@ class RecApp extends LitElement {
           break;
         case 'No Mic':
           if (this.target === 'Close') {
-            this._remoteLog(`State changed itself from ${this.state} to Closed`);
             this.state = 'Closed';
           } else if (this.connected) {
-            this._remoteLog(`State changed itself from ${this.state} to Monitor`);
             this.state = 'Monitor';
           } else {
             this.colour = 'led-red';
@@ -152,16 +150,13 @@ class RecApp extends LitElement {
           break;
         case 'Monitor':
             if (!this.connected) {
-              this._remoteLog(`State changed itself from ${this.state} to No Mic`);
               this.state = 'No Mic';
             } else {
               this.colour = 'led-yellow';
               if(this.target === 'Control' || this.target === 'Record') {
                 if (this.taken && !this.controlling) {
-                  this._remoteLog(`State changed itself from ${this.state} to Await R`);
                   this.state = 'Await R';
                 } else {
-                  this._remoteLog(`State changed itself from ${this.state} to Req Ctl`);
                   this.state = 'Req Ctl';
                 }
               } else {
@@ -174,24 +169,20 @@ class RecApp extends LitElement {
           break;
         case 'Req Rel': 
           if (!this.connected) {
-            this._remoteLog(`State changed itself from ${this.state} to No Mic`);
             this.state = 'No Mic'
           } else if (this.controlling) {
             this._releaseControl();
           } else {
-            this._remoteLog(`State changed itself from ${this.state} to Monitor`);
             this.state = 'Monitor';
           }
           break;
         case 'Req Ctl' :
           if (!this.connected) {
-            this._remoteLog(`State changed itself from ${this.state} to No Mic`);
             this.state = 'No Mic'
           } else if (!this.controlling) {
               this._takeControl();
       
           } else {
-            this._remoteLog(`State changed itself from ${this.state} to Control`);
             this.state = 'Control';
           }
           break;
@@ -201,7 +192,6 @@ class RecApp extends LitElement {
         case 'Control' :
           
           if (!this.controlling) {
-            this._remoteLog(`State changed itself from ${this.state} to Error`);
             this.state = 'Error';
             this.code = 'NoCtl'
           } else {
@@ -215,7 +205,6 @@ class RecApp extends LitElement {
       break;
         case 'Req Stp':
           if (!this.recording) {
-            this._remoteLog(`State changed itself from ${this.state} to Control`);
             this.state = 'Control';
           } else {
             this._stopRecording();
@@ -225,13 +214,11 @@ class RecApp extends LitElement {
           if (!this.recording) {
             this._startRecording();
           } else {
-            this._remoteLog(`State changed itself from ${this.state} to Record`);
             this.state = 'Record';
           }
           break;
         case 'Record':
           if (!this.recording) {
-            this._remoteLog(`State changed itself from ${this.state} to Error`);
             this.state = 'Error';
             this.code = 'NoRec'
           } else {
@@ -260,14 +247,11 @@ class RecApp extends LitElement {
     } 
 
     if (changed.has('target')) {
-      this._remoteLog(`Target Changed from ${changed.get('target')} to ${this.target}`);
       switch (this.target) {
         case 'Close':
-          this._remoteLog(`Target at Close Changing state from ${this.state} to Closed`);
           this.state = 'Closed';
           break;
         case 'Initialise':
-          this._remoteLog(`Target at Initialise Changing state from ${this.state} to Initialise`);
           this.state = 'Initialise'
           break;
         case 'Monitor': 
@@ -276,19 +260,15 @@ class RecApp extends LitElement {
           } else {
             switch(this.state) {
               case 'Closed':
-                this._remoteLog(`Target at Monitor Changing state from ${this.state} to No Mic`);
                 this.state = 'No Mic';
                 break;
               case 'Control':
-                this._remoteLog(`Target at Monitor Changing state from ${this.state} to Req Rel`);
                 this.state = 'Req Rel';
                 break;
               case 'Record':
-                this._remoteLog(`Target at Monitor Changing state from ${this.state} to Req Stp`);
                 this.state = 'Req Stp';
                 break;
               case 'Await R':
-                this._remoteLog(`Target at Monitor Changing state from ${this.state} to Monitor`);
                 this.state = 'Monitor';
             }
           }
@@ -299,15 +279,12 @@ class RecApp extends LitElement {
           } else {
             switch (this.state) {
               case 'Closed':
-                this._remoteLog(`Target at Control Changing state from ${this.state} to No Mic`);
                 this.state = 'No Mic';
                 break;
               case 'Monitor':
-                this._remoteLog(`Target at Control Changing state from ${this.state} to Req Ctl`);
                 this.state = 'Req Ctl';
                 break;
               case 'Record':
-                this._remoteLog(`Target at Control Changing state from ${this.state} to Req Stp`);
                 this.state = 'Req Stp';
                 break;
             }
@@ -319,26 +296,21 @@ class RecApp extends LitElement {
           } else {
             switch(this.state) {
               case 'Closed':
-                this._remoteLog(`Target at Record Changing state from ${this.state} to No Mic`);
                 this.state = 'No Mic';
                 break;
               case 'Monitor':
-                this._remoteLog(`Target at Record Changing state from ${this.state} to Req Ctl`);
                 this.state = 'Req Ctl';
                 break;
               case 'Control':
-                this._remoteLog(`Target at Record Changing state from ${this.state} to Req Rec`);
                 this.state = 'Req Rec';
                 break;
               case 'Sleep':
-                this._remoteLog(`Target at Record Changing state from ${this.state} to Initialise`);
                 this.state = 'Initialise';
                 break;
             }
           }
           break;
         case 'Hibernate':
-          this._remoteLog(`Target at Hibernate Changing state from ${this.state} to Sleep`);
           this.state = 'Sleep'
           break;
         default:
@@ -349,7 +321,6 @@ class RecApp extends LitElement {
           const mic = this.mic; 
           const code = this.code;
           const nextTarget = this.target.replace(/^error-(.*)$/,'$1');
-          this._remoteLog(`Change target to ${nextTarget} in 5 seconds`);
           setTimeout(() =>{
             if (mic === this.mic) {
               //we are still on the same mic
@@ -385,11 +356,9 @@ class RecApp extends LitElement {
     if (changed.has('connected') && changed.get('connected') !== undefined) {
       this._remoteLog(`Connected changed to ${this.connected}`);
       if (this.connected && this.state === 'No Mic') {
-        this._remoteLog(`Connected changed State from ${this.state} to Monitor`);
         this.state = 'Monitor';
       }
       if (!this.connected && this.state !== 'Closed' && this.state !== 'Initialise') {
-        this._remoteLog(`Connected changed State from ${this.state} to No Mic`);
         this.state = 'No Mic';
       }
     }
@@ -397,7 +366,6 @@ class RecApp extends LitElement {
     if(changed.has('taken') && changed.get('taken') !== undefined) {
       this._remoteLog(`Taken has changed to ${this.taken}`);
       if (this.state === 'Await R' && !this.taken) {
-        this._remoteLog('State was Await R , but is about to be changed to Monitor, because Taken Changed to false');
         this.state = 'Monitor';
       }
     }
@@ -406,13 +374,11 @@ class RecApp extends LitElement {
       this._remoteLog(`Controlling Changed to ${this.controlling}`);
       if (this.controlling) {
         if (this.state === 'Req Ctl') {
-          this._remoteLog(`Controlling changed State from ${this.state} to Control`);
           this.state = 'Control';
         }
       } else {
         if (this.recording) {
           this.recording = false; //this will reset the state or error
-          this._remoteLog(`Controlling changed State from ${this.state} to Error`);
           this.state = 'Error'
           this.code = 'NoCtl';
         } else if (this.state !== 'Closed') {
@@ -426,19 +392,15 @@ class RecApp extends LitElement {
       this._remoteLog(`Recording Changed to ${this.recording}`);
       if (this.recording) {
         if (!this.controlling) {
-          this._remoteLog(`Recording changed State from ${this.state} to Error`);
           this.state = 'Error';
           this.code = 'NoCtl';
         } else {
-          this._remoteLog(`Recording changed State from ${this.state} to Record`);
           this.state = 'Record';
           this.seconds = 0;
         }
       } else if (this.controlling) {
-        this._remoteLog(`Recording changed State from ${this.state} to Control`);
           this.state = 'Control'
       } else if (this.state !== 'Closed') {
-        this._remoteLog(`State currently at ${this.state} but because recording changed to False we change to Monitor`);
         this.state = 'Monitor';  
       }
     }
@@ -623,7 +585,6 @@ class RecApp extends LitElement {
       if (this.micstate[mic].ticker !== undefined) this.micstate[mic].ticker.destroy();
       delete this.micstate[mic].ticker;
     }
-    this._remoteLog(`EventClose changed State from ${this.state} to Close`);
     this.state = 'Closed';
    };
   _eventNew(e) {
@@ -691,7 +652,6 @@ class RecApp extends LitElement {
     try {
       const initialMicsLength = this.mics.length;
       const status = JSON.parse(e.data);
-      this._remoteLog(`EV - Status ${e.data}`);
       let possibleMic = '';
       let firstMic = '';
       for (const mic in status) {
@@ -796,7 +756,6 @@ class RecApp extends LitElement {
         const {state, timer} = await this._callApi('reset',mic, this.micstate[mic].token);
         if (state && mic === this.mic) this.seconds = timer;
       } else {
-        this._remoteLog(`Loud Reset changed State from ${this.state} to Error`);
         this.state = 'Error';
         this.code = 'Reset';
       }
@@ -820,7 +779,6 @@ class RecApp extends LitElement {
         this._setStatus();
       }
     } else {
-      this._remoteLog(`Mic Change changed State from ${this.state} to Error`);
       this.status = 'Error';
       this.code = 'Mic'
     }
@@ -858,7 +816,6 @@ class RecApp extends LitElement {
         }
       }
     } else {
-      this._remoteLog(`Release Control changed State from ${this.state} to Error`);
       this.state = 'Error',
       this.code = 'Give';
     }
@@ -895,7 +852,6 @@ class RecApp extends LitElement {
         this._setStatus();
       }
     } else {
-      this._remoteLog(`Retrieve Token changed State from ${this.state} to Error`);
       this.state = 'Error';
       this.code = 'Retr'
     }
@@ -929,7 +885,6 @@ class RecApp extends LitElement {
         delete this.micstate[mic].ticker;
       }
     } else {
-      this._remoteLog(`Run Ticker changed State from ${this.state} to Error`);
       this.state = 'Error';
       this.code = 'Tick'
     }
@@ -965,31 +920,24 @@ class RecApp extends LitElement {
       this.target = this.mode;
     }
     if (this.recording) {
-      this._remoteLog(`In setStatus changing State from ${this.state} to Record`);
       this.state = 'Record';
     } else if (this.controlling) {
-      this._remoteLog(`In setStatus changing State from ${this.state} to Control`);
       this.state = 'Control';
     } else if (this.connected) {
-      this._remoteLog(`In setStatus changing State from ${this.state} to Monitor`);
       this.state = 'Monitor';
     } else {
-      this._remoteLog(`In setStatus changing State from ${this.state} to No Mic`);
       this.state = 'No Mic';
     }
     switch (this.state) {
       case 'Closed':
       case 'Initialise':
         if (this.target !== 'Record') {
-          this._remoteLog(`In setStatus changing State from ${this.state} to No Mic`);
           this.state = 'No Mic';
         } else {
-          this._remoteLog(`In setStatus changing State from ${this.state} to Record`);
           this.state = 'Record';
         }
         break;
       case 'Sleep':
-        this._remoteLog(`In setStatus changing State from ${this.state} to Record`);
         this.state = 'Record';
         break;
     }
@@ -1012,7 +960,6 @@ class RecApp extends LitElement {
       }
   
     } else {
-      this._remoteLog(`Start Recording changing State from ${this.state} to Error`);
       this.state = 'Error';
       this.code = 'Rec';
     }
@@ -1032,7 +979,6 @@ class RecApp extends LitElement {
         this.code = 'Stop';
       }
     } else {
-      this._remoteLog(`In Stop Recording changing State from ${this.state} to Error`);
       this.state = 'Error';
       this.code = 'Stop';
     } 
@@ -1040,7 +986,6 @@ class RecApp extends LitElement {
   }
   
   async _takeControl() {
-    this._remoteLog('About to Try and Take Control take Control')
     if (!this.micstate[this.mic].taken) {
       const mic = this.mic;
       const {state,token} = await this._callApi('take', mic, this.client)
@@ -1063,7 +1008,6 @@ class RecApp extends LitElement {
   
     
     } else {
-      this._remoteLog('Not taken as taken was already set');
       this.state = 'Await R';
     }
   }
