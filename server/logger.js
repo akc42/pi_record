@@ -25,7 +25,8 @@
     error: chalk.white.bgRed,
     url: chalk.white.bgMagenta,
     rec: chalk.cyan,
-    log: chalk.yellowBright
+    log: chalk.yellowBright,
+    err: chalk.redBright
   };
 
   function logger(level, message, client) {
