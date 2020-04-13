@@ -282,6 +282,13 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
       logger('rec', `recorder ${this._name} failed to renew, so control released`);
       return {state: false };
     }
+    retrieve(client) {
+      debug('request by client ', client, ' to retrieve their token')
+      if (this.controlled && client === this._client) {
+        return {state: true, token: this._controlled};
+      }
+      return {state: false}
+    }
     async stop(token) {
       debug(`Recorder ${this._name} request to stop recording after ${this.timer} secs`);
       if (this._checkToken(token)) {
