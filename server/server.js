@@ -41,6 +41,9 @@
   const etag = require('etag');
   const logger = require('./logger');
   const contentDisposition = require('content-disposition');
+  const child = require('child_process');
+  const root = path.resolve(__dirname,'../');
+
 // see https://stackoverflow.com/a/52171480/438737
   const cyrb53 = function(str, seed = 0) {
     let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
@@ -52,8 +55,30 @@
     h1 = Math.imul(h1 ^ h1>>>16, 2246822507) ^ Math.imul(h2 ^ h2>>>13, 3266489909);
     h2 = Math.imul(h2 ^ h2>>>16, 2246822507) ^ Math.imul(h1 ^ h1>>>13, 3266489909);
     return 4294967296 * (2097151 & h2) + (h1>>>0);
-};
+  };
 
+  const version = new Promise(resolve => {
+    /*
+      we use the following file to workout the copyright year. As the system becomes more stable
+      this becomes harder to chose one that closely represents the latest changes. The obvious
+      choice is the .env file, as that is normally built during the release of a new version
+    */
+
+    child.exec('git describe --abbrev=0 --tags',{cwd: root}, (err,stdout,stderr) => {
+      let version;
+      if (stderr) {
+        logger('error', 'git describe failed reading verion number with ' + err.message);
+        if (process.env.REC_VERSION) {
+          version = process.env.REC_VERSION;
+        } else {
+          version = ':v0.0.0';
+        }
+      } else {
+        version = stdout.trim();
+      }
+      resolve(version);
+    });
+  });
 
   const setTimeoutPromise = util.promisify(setTimeout);
 
@@ -203,19 +228,25 @@
             if (subscribedChannels[client] !== undefined) delete subscribedChannels[client].response;
             //we don't do anything else as they may come back and we need to have the correct picture
           });
-          //before anything else we send the client info to the user (should wake him up if asleep)
-          sendStatus('newid', {
-            client: client, 
-            renew: parseInt(process.env.RECORDER_RENEW_TIME,10),
-            log: process.env.RECORDER_NO_REMOTE_LOG === undefined,
-            warn: process.env.RECORDER_NO_REMOTE_WARN === undefined
-          }, response);
-          const status = {
-            scarlett: recorders.scarlett !== undefined? recorders.scarlett.status : {connected: false},
-            yeti: recorders.yeti !== undefined? recorders.yeti.status :{connected: false}
-          };
-          //then send the current status of all the microphones.
-          sendStatus('status', status, response);
+          //don't do anymore until we have a version read (normally will have completed by now)
+          version.then(version => {
+            //before anything else we send the client info to the user (should wake him up if asleep)
+            sendStatus('newid', {
+              client: client, 
+              renew: parseInt(process.env.RECORDER_RENEW_TIME,10),
+              log: process.env.RECORDER_NO_REMOTE_LOG === undefined,
+              warn: process.env.RECORDER_NO_REMOTE_WARN === undefined,
+              version: version
+            }, response);
+            const status = {
+              scarlett: recorders.scarlett !== undefined? recorders.scarlett.status : {connected: false},
+              yeti: recorders.yeti !== undefined? recorders.yeti.status :{connected: false}
+            };
+            //then send the current status of all the microphones.
+            sendStatus('status', status, response);
+          });
+
+
 
         } else {
           res.writeHead(404);

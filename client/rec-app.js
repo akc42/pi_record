@@ -31,8 +31,12 @@ import './rec-record-button.js';
 import './round-switch.js';
 import './rec-reset-button.js';
 
+import label from './styles/label.js';
 
 class RecApp extends LitElement {
+  static get styles() {
+    return [label];
+  }
 
   static get properties() {
     return {
@@ -444,11 +448,11 @@ class RecApp extends LitElement {
           display: grid;
           grid-gap: 5px;
           grid-template-areas:
-            "logo led volume"
-            "button reset volume"
-            "mode mic volume"
-            "lcd lcd volume";
-          grid-template-columns: 4fr 4fr 5fr;
+            "logo ver led volume"
+            "button reset reset volume"
+            "mode mic mic volume"
+            "lcd lcd lcd volume";
+          grid-template-columns: 4fr 1fr 3fr 5fr;
           grid-template-rows: 1fr 2fr 2fr 3fr;
 
         }
@@ -456,8 +460,9 @@ class RecApp extends LitElement {
           grid-area: led;
         }
 
-        rec-switch {
-          grid-area: switch;
+        #version {
+
+          grid-area: ver;
         }
         rec-lcd {
           grid-area: lcd;
@@ -498,6 +503,7 @@ class RecApp extends LitElement {
       </style>
       <div id="case">
         <div id="icon" @click=${this._downloadCert}></div>
+        <div id="version" label>${this.version}</div>
         <rec-led .colour=${this.colour} style="--led-size: 12px;"></rec-led>
         <rec-record-button ?enabled=${this.controlling} ?pushed=${this.recording} @record-change=${this._recordChange}></rec-record-button> 
         <rec-reset-button ?enabled=${this.controlling && !this.recording} @loud-reset=${this._loudReset}></rec-reset-button> 
@@ -589,11 +595,12 @@ class RecApp extends LitElement {
    };
   _eventNew(e) {
     try {
-      const {client,renew, warn, log} = JSON.parse(e.data);
+      const {client,renew, warn, log, version} = JSON.parse(e.data);
       this.client = client;
       this.renew = renew;
       this.log = log;
       this.warn = warn;
+      this.version = version;
       this._remoteLog(`EV - Setting client to ${client} renew to ${renew}`);
     } catch (err) {
       this._remoteWarn('Error in parsing Event New Id:', e);
@@ -670,7 +677,7 @@ class RecApp extends LitElement {
             taken: false, 
             token: '', 
             client: '',
-            name: name,
+            name: '',
             mode: 'Unknown',
             recording: false, 
             file: ''
@@ -678,7 +685,8 @@ class RecApp extends LitElement {
           }, status[mic]);
   
         } else {
-          if (status[mic].name !== undefined && status[mic].name.length === 0) delete status[mic].name; //don't overwrite a name with blank once we have captured it.
+          if (status[mic].name !== undefined && status[mic].name.length === 0 && 
+            this.micstate[mic].name.length > 0) delete status[mic].name; //don't overwrite a name with blank once we have captured it.
           const controlling = status[mic].connected && status[mic].taken && status[mic].client === this.client;
           const recording = controlling && status[mic].recording
           const state = {recording: recording};
