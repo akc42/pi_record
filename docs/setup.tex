@@ -37,42 +37,13 @@
 \begin{document}
 \maketitle
 \abstract{%
-<<<<<<< HEAD
-PAS v5 is going to run on a Raspberry Pi Model B (Version 2 or later). This document describes
-the hardward that is needed, the set up of the operating system on that hardware, And how to load PAS v5 software on to it and make it operational
-=======
 This is a project to create a portable audio recorder.  It consists of a Raspberry PI 4 running a basic server system and a nodejs application which 
 provides a web interface to control recording and to spawn the ffmpeg application to record the audio, but also generate a video stream of the volume
 on the incoming audio. Recorded audio files will be recoverable via sftp for offline post processing. 
->>>>>>> 3eaa5e83709238fdaef8522ec372b15fa2671746
 }
 \tableofcontents
 \section{Introduction}
 
-<<<<<<< HEAD
-I have decided that PASv5 should run on a standalone Rapsberry Pi, There are a number of reasons forsudo
-this decision, but mainly because the main server already runs a web server that is incompatible
-with PASv5 and because the manager of the main server has asked that we run PASv5 on a separate
-machine,
-
-Because of the low cost of a Raspberry PI server (the proposed configuration costs less that £70
-inclusive of everything needed) and because the only data it will store is logs to aid in the
-debugging of PASv5 the server itself does not have to be kept alive with expensive support.  It
-would be perfectly feasible, indeed this is what is happening, for Accuvision to keep a spare
-machine in the cupboard fully configured and ready to go should the main one fail.  This can prevent
-any issues of putting PASv5 into production.
-
-The purpose of this document is to describe how to create this server from scratch should it ever be
-necessary, initially setting up the hardware and a system image which is loaded on to an SD card.
-Secondly we then show how to set the infrastructure that enables PASv5 to be built, run in
-production, and updated to the next release when available.
-
-From time to time will we use the system tools on the server to update the software that is not part
-of PASv5. When we do it is then necessary to take a backup of this revised system image so that can
-be installed on backup hardware.  We describe how to do this.
-
-=======
->>>>>>> 3eaa5e83709238fdaef8522ec372b15fa2671746
 \section{The Hardware}
 
 The hardware needed for the PASv5 Server is fairly minimal and is given in the list below:-
