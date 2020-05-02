@@ -216,7 +216,8 @@
           debug('/api/status received creating/reusing channel ', client);
           res.writeHead(200, {
             'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache'
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no' 
           });
           if (subscribedChannels[client] === undefined) {
             subscribedChannels[client] = {response: response,channels: {}};
@@ -294,7 +295,8 @@
           debug ('volume subscription received for channel ', recorder.name)
           res.writeHead(200, {
             'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache'
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no' 
           });
           recorder.subscribe(response);
           debug('wrote headers for volume subscription');
