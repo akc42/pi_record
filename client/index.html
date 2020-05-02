@@ -1,0 +1,101 @@
+<!--
+@licence
+    Copyright (c) 2020 Alan Chandler, all rights reserved
+
+    This file is part of Reocrider.
+
+    Reocrider is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Reocrider is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Reocrider.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, minimum-scale=1.0, initial-scale=1.0, user-scalable=yes, shrink-to-fit=no">
+    <title>Recorder</title>
+    <base href="/">
+
+    <link rel="shortcut icon" sizes="32x32" href="images/recorder-icon-32.png">
+
+    <meta name="theme-color" content="#ffc107">
+    <!-- Add to homescreen for Chrome on Android. Fallback for manifest.json -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="Recorder">
+
+    <!-- Add to homescreen for Safari on iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Recorder">
+
+    <!-- Homescreen icons -->
+    <link rel="apple-touch-icon" href="images/recorder-icon.svg">
+    <link rel="apple-touch-icon" sizes="72x72"href="images/recorder-icon.svg">
+    <link rel="apple-touch-icon" sizes="96x96" href="images/recorder-icon.svg">
+    <link rel="apple-touch-icon" sizes="144x144" href="images/recorder-icon-144.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="images/recorder-icon.svg">
+
+    <!-- Tile icon for Windows 8 (144x144 + tile color) -->
+    <meta name="msapplication-TileImage" content="images/recorder-icon-144.png">
+    <meta name="msapplication-TileColor" content="#000">
+    <meta name="msapplication-tap-highlight" content="no">
+
+    <link rel="manifest" href="manifest.json">
+
+    <script src="../node_modules/@webcomponents/webcomponentsjs/webcomponents-loader.js"></script>
+
+    <script type="module" src="./rec-app.js"></script>
+    <script>
+      if('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
+      }
+
+
+    </script>
+    <style>
+      html {
+        background: #ffffff;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: sans-serif;
+        line-height: 1.5;
+        background-color: #fafafa;
+        color: #333;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin:0;
+        padding:0;
+      }
+
+      /* styling for render while resources are loading */
+
+
+      rec-app[unresolved] section {
+        letter-spacing: 0.3em;
+        font-weight: 600;
+        margin:0;
+        padding:0;
+      }
+
+    </style>
+
+  </head>  
+  <body>
+    <rec-app unresolved>
+      <img src="/images/recorder.svg" alt="Recorder Outline" height="600px" width="600px">
+    </rec-app>
+  </body>
+</html>

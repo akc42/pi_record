@@ -24,19 +24,22 @@
     api: chalk.green,
     error: chalk.white.bgRed,
     url: chalk.white.bgMagenta,
-    client: chalk.cyan
+    rec: chalk.cyan,
+    log: chalk.yellowBright,
+    err: chalk.redBright
   };
 
-  function logger(level, message, clientIp) {
+  function logger(level, message, client) {
     let logLine = '';
-    if (process.env.PAS_NOLOG === undefined) {
-      if (clientIp) {
-        logLine += ' ' + clientIp;
+    if (process.env.REC_NOLOG === undefined) {
+      if (process.env.REC_LOGNODATE === undefined) logLine += new Date().toISOString() + ': ';
+      if (client) {
+        logLine += COLOURS['api'](client + ': ');
       }
-      let ldate = new Date().toLocaleString();
-      logLine += ' ' + ldate + ' ' + COLOURS[level](message);
+      logLine += COLOURS[level](message);
       //eslint-disable-next-line no-console
-      console.log(logLine);
+      console.log(logLine.trim());
+
     }
   }
 

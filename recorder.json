@@ -1,0 +1,24 @@
+{
+  "apps" : [
+    {
+      "name" : "recorder",
+      "script" : "server/server.js",
+      "args" : [
+        "--color"
+      ],
+      "kill_timeout": 15000,
+      "watch" : ["server"],
+      "watch_options": {"followSymlinks" : false},
+      "min_uptime"       : "30s",
+      "max_restarts"     : 5,
+      "merge_logs" : true,
+      "log_date_format" : "YYYY-MM-DD HH:mm:ss",
+      "env": {
+        "DEBUG_COLORS": true,
+        "RECORDER_RECORDINGS": "../recordings",
+        "REC_LOGNODATE": "yes",
+        "RECORDER_NO_REMOTE_LOG": "yes"
+      }
+    }
+  ]
+}
