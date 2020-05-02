@@ -1,0 +1,848 @@
+%Copyright (c) 2015 Alan Chandler, all rights reserved
+%
+%This file is part of PASv5, an implementation of the Patient Administration
+%System used to support Accuvision's Laser Eye Clinics.
+%
+%PASv5 is licenced to Accuvision (and its successors in interest) free of royality payments
+%and in perpetuity in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
+%implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. Accuvision
+%may modify, or employ an outside party to modify, any of the software provided that
+%this modified software is only used as part of Accuvision's internal business processes.
+%
+%The software may be run on either Accuvision's own computers or on external computing
+%facilities provided by a third party, provided that the software remains soley for use
+%by Accuvision (or by potential or existing customers in interacting with Accuvision).
+
+\documentclass[Draft]{akc}
+\author{Alan Chandler}
+\title{Note 2: The PAS Server}
+\project{PAS v5 Design Notes}
+\date{27th September 2019}
+\usepackage{listings}
+\lstdefinestyle{bstyle}{
+  belowcaptionskip=1\baselineskip,
+  breaklines=true,
+  frame=L,
+  columns=flexible,
+  xleftmargin=\parindent,
+  language=bash,
+  showstringspaces=false,
+  basicstyle=\footnotesize\ttfamily,
+  keywordstyle=\bfseries\color{green!40!black},
+  commentstyle=\itshape\color{purple!40!black},
+  identifierstyle=\color{blue},
+  stringstyle=\color{orange},
+}
+\lstset{style=bstyle}
+\begin{document}
+\maketitle
+\abstract{%
+PAS v5 is going to run on a Raspberry Pi Model B (Version 2 or later). This document describes
+the hardward that is needed, the set up of the operating system on that hardware, And how to load PAS v5 software on to it and make it operational
+}
+\tableofcontents
+\section{Introduction}
+
+I have decided that PASv5 should run on a standalone Rapsberry Pi, There are a number of reasons forsudo
+this decision, but mainly because the main server already runs a web server that is incompatible
+with PASv5 and because the manager of the main server has asked that we run PASv5 on a separate
+machine,
+
+Because of the low cost of a Raspberry PI server (the proposed configuration costs less that £70
+inclusive of everything needed) and because the only data it will store is logs to aid in the
+debugging of PASv5 the server itself does not have to be kept alive with expensive support.  It
+would be perfectly feasible, indeed this is what is happening, for Accuvision to keep a spare
+machine in the cupboard fully configured and ready to go should the main one fail.  This can prevent
+any issues of putting PASv5 into production.
+
+The purpose of this document is to describe how to create this server from scratch should it ever be
+necessary, initially setting up the hardware and a system image which is loaded on to an SD card.
+Secondly we then show how to set the infrastructure that enables PASv5 to be built, run in
+production, and updated to the next release when available.
+
+From time to time will we use the system tools on the server to update the software that is not part
+of PASv5. When we do it is then necessary to take a backup of this revised system image so that can
+be installed on backup hardware.  We describe how to do this.
+
+\section{The Hardware}
+
+The hardware needed for the PASv5 Server is fairly minimal and is given in the list below:-
+
+\begin{itemize}
+\item Raspberry Pi 2 Model B - Or Pi 3
+\item FLIRC Raspberry Pi B+ Case (recommended for its thermal properties, although any case will work)
+\item Raspberry Pi Universal Power Supply (5v, 2A, microUSB)
+\item 16GB Micro SD (SanDisk class @10 recommended)
+\item Ethernet cable to connect to the internal lan
+\item (Optional) 64B USB stick for backups.
+\end{itemize}
+
+One version of this is needed for the main server, it is recommeded to get a second copy (excluding
+the optional usb stick) to act as an immediate replacement in the event of failure.
+
+\subsection{Putting an Operating System and other Software on the Hardware}
+
+The hardware boots and runs the software installed on a MicroSD card placed in the slot in the case
+for that purpose.  The first partition of the MicroSD card \emph{must} be of type FAT32 and contain
+the boot image and information associated with booting the system.  The other partitions make up the
+running system.
+
+You start with a blank card and add information to it.
+
+In essence there are two ways to create the SD card
+\begin{enumerate}
+\item From scratch, creating the partitions, installing an operating system image that has been
+downloaded from the internet, and then installing all the software that is required.  This
+\emph{will} require another machine.  Dependant on the peripherals (SD Card Reader or not) on the
+`preparation' machine a USB to SD card converter  \emph{might} might be needed.
+\item Copying a backup image taken previously on to the new SD Card.  Assuming this process is done
+on the live system a USB SD card converter \emph{will} be required.
+\end{enumerate}
+
+These two options are described in the subsections below.
+
+\section{Creating an SD Card}
+\subsection{Creating an Original SD Card Operating System Image}
+\subsubsection{Getting The Initial Skeleton Sysem onto the SD card}
+Working on the `preparation' machine, download a working image of the Rasbian (Linux, Debian) System.  At the time of writing
+this is a version called `Buster' and is downloadable from
+\url{https://www.raspberrypi.org/downloads/raspbian/}.
+
+This page shows various downloads, but the `Raspian Buster Lite' package is the one required. This starts
+with a minimal number of packages installed (more can be added later). Chose the zip file version,
+which if you click on the link will load
+\href{https://downloads.raspberrypi.org/raspbian_lite_latest} {The latest Zip File Version}.
+
+When this zip file has finished downloading extract the contents (an `.img' file).
+To install this image on the card we need to follow the instructions given here:-
+
+\begin{lstlisting}
+sudo dd status=progress bs=4M if=imagefilename.img of=/dev/sdX  #X = whatever the device holding the sd card is
+\end{lstlisting}
+
+This will create an SD card with two partitions filling up about 1.4GB of the 16GB on the card.
+Before the this card can be put in the Raspberry Pi space needs to be allocated for one more
+partition.  The easiest way to do that is with  \texttt{fdisk}.  Ultimately the second partition is
+going to take the remainder of the SD card minus a 1GB partition at the end used to hold the swap
+file\footnote{We are going to be using the `btrfs' filesystem that will not work with swap. It is
+therefore necessary to create an swap partition}.  It is necessary to
+take the scary step of deleting the second partition and then recreating it at exactly the same
+start location, but with the end location 1GB (we try to stay on 4M boundaries in order to line files up
+with the erase boundaries of the sd card) from the end of the card. Provided we do recreate this
+second partition at exactly the same place as the original, no data will be lost from it.
+
+Follow the following steps:-
+\begin{enumerate}
+\item With the card still in the /dev/sdX as above, run \texttt{fdisk /dev/sdX}.
+\item Press `p' to print the partition list and note down the starting sector of partition 2.  The
+list should also give sector number for the last sector on the card. Subtract 2097152\footnote{1GB
+in 512B sectors} from it and round this down so it exactly divisible by 8192. This as the start sector
+for partition 3.
+\item Press `d' to delete this partition.
+\item Press `n' to recreate this partition.  Make it a primary partiion and use the starting sector
+noted in step 2 above and the end sector as the value also noted in Step 2 minus 1. Don't remove the
+ext4 signature when prompted.
+\item Press `p' to re print the partition list and note the ending sector number for the second partition.
+\item Press `n' to add a new partition starting at one sector after the ending sector noted above.
+Again it should be a primary partition and should fill the rest of the disk.
+\item Press `t' to specify the type of this partition as `82'. which is the type of a swap partition.
+\item Press `w' to save the partition table back to the card and exit the program.
+\end{enumerate}
+
+We can now turn partition 3 into a swap partiion
+\begin{lstlisting}
+sudo mkswap -L swap /dev/sdX3
+\end{lstlisting}
+
+We should now have an image that will at least run in a Raspberry Pi
+
+\subsubsection{Initial Adjustments}
+
+Put the card into the Raspberry Pi, borrow and connect a keyboard and monitor to it and power it on.  This
+should boot up and present a log on prompt. Log on to the ``pi'' account using the password ``raspberry''.
+
+Once logged on the following has to be completed. This can be done with the command \texttt{sudo
+raspi-config}:-
+
+\begin{itemize}
+\item Update \texttt{raspi-config} to the latest version (Advanced Options/Update)
+\item Change the password of the ``pi'' account. I have used the main
+``Administrative Logon'' password given in document ``Passwords for the SQL Server Implementation of
+PAS'' written by me in April 2012 and lodged with Accuvision at the time.
+\item Set boot options to Console, requiring user to log in.
+\item Ensure the international settings are for English(British).
+\item Disable all interface options except SSH server, which should be enabled.
+\item Give the unit a hostname of ``pas'' (Advanced Options/Hostname).
+\item Set the required GPU memory to 16  (Advanced Options/Memory Split)
+\end{itemize}
+
+Exit the \texttt{raspi-config} program and tell the Raspberry Pi to reboot itself.  From this point
+on direct connection of the keyboard and monitor is no longer needed\footnote{Unless an error is
+made that has to be recovered from.} and they can be disconnected and returned to where ever they
+were borrowed from!
+
+Now use SSH to connect to the ``pi'' account.  This will be something like \texttt{ssh pi@pas}\footnote{If
+the host computer has been used on other sd cards connected to this same host then it may be necessary to
+edit ~/ssh/known\_hosts on the host computer to remove old and invalid host keys}.
+
+The following set of tasks need to be performed
+
+\subsubsection{Check that the entire root partition is filled with a filesystem}
+
+Raspbian seems to do this automatically on first start, but it is worth double checking by
+issuing the following command:-
+
+\begin{lstlisting}
+sudo resize2fs /dev/mmcblk0p2
+\end{lstlisting}
+
+This will either do the expansion or report there is nothing to do.
+\subsubsection{Use the swap partition}
+We can now get the system to use the swap partition with the following steps:-
+\begin{lstlisting}
+sudo systemctl stop dphys-swapfile
+sudo systemctl disable dphys-swapfile
+sudo nano /etc/fstab          #Add the line shown below to the file and remove the comment about no swap because of dphys-swapfile
+swapon -a
+# if all works
+sudo apt remove dphys-swapfile
+sudo apt autoremove
+sudo rm /var/swap
+\end{lstlisting}
+
+The line to add the \texttt{/etc/fstab} should look like this
+\begin{lstlisting}
+LABEL=swap      none        swap  sw                0    0
+\end{lstlisting}
+
+
+\subsection{Convert to btrfs}
+\subsubsection{An Overview of the Process}
+Previously the process of creating a btrfs filesystem from the contents of the existing ext4 root filesystem was
+automatic using the \texttt{btrfs-convert} utility.  However that is no longer supplied and is not recommended either,
+so we have to take a new approach.  So we take this in a series of steps
+\begin{enumerate}
+  \item prepare an \texttt{initramfs} image that includes the btrfs filesystem
+  \item adjust the parameters to enable the new system to correctly boot
+  \item move offline so we can manipulate the root filesystem
+  \item backup the existing ext4 rootfilesystem, delete it and replace it with a btrfs one
+  \item make btrfs subvolumes for root and log
+  \item restore the rootfilesystem into the new btrfs subvolumes
+  \item replace it in the raspberry pi and boot it.
+\end{enumerate}
+
+\subsubsection{Setting up initramfs to include the btrfs filesystem module}
+
+The first step is to install the btrfs and initramfs tools that we need. It is also helpful to
+install vim, the text editor that we will use and rsync.
+
+\begin{lstlisting}
+  sudo apt install vim btrfs-tools initramfs-tools
+\end{lstlisting}
+
+Edit \texttt{/etc/initramfs-tools/modules} to add btrfs as the last line. Then use
+
+\begin{lstlisting}
+sudo mkinitramfs -o /boot/initramfs7.img $(uname -r)
+\end{lstlisting}
+
+To create an initramfs that can be used to start up with btrfs
+
+Edit \texttt{/boot/config.txt} file to have the following line at the top
+
+\begin{lstlisting}
+initramfs initramfs7.img followkernel
+\end{lstlisting}
+
+Edit \texttt{/boot/cmdline.txt} to add the the following two elements \texttt{rootfstype=btrfs} and
+\texttt{rootflags=subvol=\_root}
+
+It is also important that whenever the kernel is upgraded we recreate our \texttt{initramfs7.img}
+file for the newer kernel.
+
+Create a new file \texttt{/etc/kernel/postinst.d/initramfs-rebuild} with the following contents and
+then make it executable.
+
+\begin{lstlisting}
+  #!/bin/sh -e
+
+  # Rebuild initramfs{7,7l,8).img after kernel upgrade to include new kernel's modules.
+  # Exit if rebuild cannot be performed
+  [ -x /usr/sbin/mkinitramfs ] || exit 0
+
+  # Exit if not building kernel for this Raspberry Pi's hardware version (assume armv7).
+  version="$1"
+  case "${version}" in
+    *-v7+) arch=7 ;;
+    *-v7l+) arch=7l ;;
+    *-v8+) arch=8 ;;
+    *) exit 0
+  esac
+  # Exit if rebuild not needed.
+  [ -f /boot/initramfs$arch.img ] && lsinitramfs /boot/initramfs$arch.img | grep -q "/$version$" && exit 0  # Already in initramfs.
+
+  # Rebuild.
+  mkinitramfs -o /boot/initramfs$arch.img "$version"
+\end{lstlisting}
+
+Make the file executable.
+
+Shutdown the system and remove the SD card.
+\subsubsection{Backup existing ext4 filesystem and replace with new btrfs filesysem}
+
+The following steps need to take place without the SD card as the running kernel. As they are purely
+file system changes.  It can be done either on the original host machine where the SD card was
+formated in the first place, or on the Raspberry Pi using another SD card made from the original
+image and used as a host.
+
+Assume that there is a spare mount point at \texttt{/mnt} in whatever environment is being used and that the
+SD card we are converting is in \texttt{/dev/sdX}, then the
+following commands should be followed
+
+\begin{lstlisting}
+sudo -s   #transition to root mode and stay there
+mount /dev/sdX2 /mnt
+cd ~
+mkdir rootfs-backup
+rsync -axAHX /mnt/ rootfs-backup/  #backup root
+umount /dev/sdX2
+wipefs -a /dev/sdX2
+mkfs -t btrfs -L rootfs /dev/sdX2
+mount -o subvol=/ /dev/sdX2 /mnt
+btrfs subvolume create /mnt/_root
+btrfs subvolume create /mnt/_log
+btrfs quota enable /mnt/_log              #so we can apply a quota to it
+btrfs qgroup limit 2g /mnt/_log           #of 2 Gigs
+btrfs subvolume create /mnt/_pas          #to be used when we come to set up pas user
+rsync -axAHX rootfs-backup/ /mnt/_root/   #restore filesystem
+mv /mnt/_root/var/log/*  /mnt/_log/       #separate logs
+mkdir -p /mnt/_root/mnt/btrfs_pool        #create a place to mount the whole btrfs filesystem
+mkdir -p /mnt/_root/mnt/backup            #create a directory for mounting external backup media in future
+vim /mnt/_root/etc/fstab  #set the new contents of /etc/fstab as listed below
+umount /mnt
+\end{lstlisting}
+
+The \texttt{/etc/fstab} file edited above should look like the following
+
+\begin{lstlisting}
+proc            /proc     proc  defaults                          0    0
+LABEL=boot      /boot     vfat  defaults                          0    2
+LABEL=rootfs    /         btrfs defaults,noatime,ssd,subvol=_root 0    0
+LABEL=rootfs    /var/log	btrfs defaults,noatime,ssd,subvol=_log  0    0
+LABEL=swap      none      swap  sw                                0    0
+\end{lstlisting}
+
+Remove the SD card and place in back in the Raspberry Pi and boot it.  If this has worked and you can ssh into the pi
+account, you can also safely delete the rootfs-backup directory created earlier
+
+
+\subsection{Adjusting the system so it ready for PAS}
+
+\subsubsection{Set up SSH Keys to avoid having to enter a password on each connection}
+
+It is desirable to be able to connect as the ``pi'' user to perform system maintenance tasks without having
+to enter a password every time.  This can be done securely by providing the public keys of users
+allowed to connect and perform this function. At the time of writing this document these are:-
+
+\begin{itemize}
+\item Alan from his home machine
+\item Alan from the Windows 10 Virtual Machine, enabling access to the clinic over an encrypted network.
+\item Alan from the machine in the Clinic
+\end{itemize}
+
+Each of these accounts are configured already with private keys to connect, so the public keys need to be copied
+across and installed in an \texttt{authorized\_keys} file.
+
+Firstly whilst in the ``pi'' account perform the following commands:-
+
+\begin{lstlisting}
+mkdir .ssh
+chmod 700 .ssh
+\end{lstlisting}
+
+Then back on the machine where all the keys are stored \footnote{The `pas' without any extension is the private key for this box and can be used to connect from this box to elsewhere. This will be used, for instance to connect to a master copy of the PASv5 repository and pull in the latest versions.}
+
+\begin{lstlisting}
+scp kanga.pub roo.pub accwrk7.pub pas pi@pas:.ssh/
+\end{lstlisting}
+
+Then ssh back to pi@pas
+
+\begin{lstlisting}
+cd .ssh
+mv pas id_rsa  #set up the private key for this unit
+cat kanga.pub roo.pub accwrk7.pub > authorized_keys
+\end{lstlisting}
+
+It should now be possible to connect directly to pi@pas without entering a password\footnote{This
+assumes that the private keys corresponding the the copied public keys are without pass phrases.
+This is generally the case with the keys used just because of the convenience.}.
+
+\subsubsection{Add additional software needed to run the system}
+
+Initially upgrade to latest versions of software
+
+\begin{lstlisting}
+sudo apt-get update
+sudo apt-get upgrade
+sudo reboot
+\end{lstlisting}
+
+In the clinic, the default domain being used is `accuvision.local'.  Because this clashes with the
+default local domain (`.local') it can cause some strange results when looking up addresses. To
+solve this we need to edit the \texttt{/etc/nsswitch.conf} file and change the `hosts` line to
+the following:-
+
+\begin{lstlisting}
+hosts:          files dns mdns4_minimal [NOTFOUND=return]
+\end{lstlisting}
+
+Then install the additional software required
+
+\begin{lstlisting}
+  sudo apt-get install git htop wget postfix
+  \end{lstlisting}
+
+The only one of these that needs any configuration is postfix, and the following files
+should be set up as follows:-
+
+\texttt{/etc/postfix/main.cf}
+\begin{lstlisting}
+  # See http://www.postfix.org/COMPATIBILITY_README.html -- default to 2 on
+  # fresh installs.
+  compatibility_level = 2
+
+  smtpd_banner = $myhostname ESMTP $mail_name (Raspbian)
+  biff = no
+  # appending .domain is the MUA's job.
+  append_dot_mydomain = no
+
+  delay_warning_time = 4h
+  confirm_delay_cleared = yes
+  notify_classes = delay
+  readme_directory = no
+
+  # TLS parameters
+  smtpd_tls_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem
+  smtpd_tls_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+  smtpd_use_tls=yes
+  smtpd_tls_session_cache_database = btree:${data_directory}/smtpd_scache
+  smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
+
+  smtp_use_tls = yes
+  smtp_sasl_auth_enable = yes
+  smtp_sasl_password_maps = hash:/etc/postfix/relay_password
+  smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
+  smtp_sasl_security_options =
+  smtp_tls_security_level = may
+
+  smtpd_relay_restrictions = permit_mynetworks permit_sasl_authenticated defer_unauth_destination
+  myhostname = pas.accuvision.local
+  alias_maps = hash:/etc/aliases
+  alias_database = hash:/etc/aliases
+  myorigin = /etc/mailname
+
+  relayhost = [mail.accuvision.co.uk]
+  mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
+  mailbox_size_limit = 0
+  recipient_delimiter = +
+  inet_interfaces = loopback-only
+  inet_protocols = all
+
+  #There are no local domains - everything must go somewhere else, the virtual maps define it
+  local_transport = error: User unknown
+  local_recipient_maps =
+  mydestination =
+
+  #virtual alias domains, we are the mail server for the domain, but everything gets forwarded
+  virtual_alias_domains =
+    $myhostname
+
+  virtual_alias_maps = hash:/etc/postfix/virtual
+\end{lstlisting}
+
+\texttt{/etc/postfix/virtual}
+
+\begin{lstlisting}
+  #Local transport will specify virtual, so these entries reroute
+  mailer-daemon alan.chandler+pas@hartley-consultants.com
+  postmaster  alan.chandler+pas@hartley-consultants.com
+  webmaster  alan.chandler+pas@hartley-consultants.com
+  abuse  alan.chandler+pas@hartley-consultants.com
+  root alan.chandler+pas@hartley-consultants.com
+  pas alan.chandler+pas@hartley-consultants.com
+  pi alan.chandler+pas@hartley-consultants.com
+
+\end{lstlisting}
+
+\texttt{/etc/postfix/relay\_password}
+
+\begin{lstlisting}
+  mail.accuvision.co.uk info@accuvision.co.uk:EyECare555
+\end{lstlisting}
+
+It is also necessary to run a few commands
+\begin{lstlisting}
+  sudo hostname pas.accuvision.local
+  sudo postmap /etc/postfix/virtual
+  sudo postmap /etc/postfix/relay_password
+\end{lstlisting}
+
+\subsubsection{Create the pas user}
+
+We are going to have a user ``pas'' who will own and run the pas system.  However, we want to give this
+user their own btrfs subvolume because it will be easier to back this up and restore it.  However in order to get the permissions
+set up correctly we have create the user first and then move all the file so a new subvolume
+\begin{lstlisting}
+  sudo -s   #become root
+  adduser pas
+  mount -o subvol=_pas /dev/mmcblk0p2 /mnt
+  mv /home/pas/* /mnt/
+  mv /home/pas/.* /mnt/
+  umount /mnt
+  mount -o subvol=_pas /dev/mmcblk0p2 /home/pas
+  vim /etc/fstab     #add the line below into the exsting file
+\end{lstlisting}
+
+The following should be added to /etc/fstab
+\begin{lstlisting}
+  LABEL=rootfs  /home/pas	      btrfs   defaults,noatime,ssd,subvol=_pas   0       0
+\end{lstlisting}
+
+\subsubsection{Set up backup processes}
+
+We want to create some cron jobs that help maintain the system.  The first of these will be a
+filesystem check.  Create a file called \texttt{/etc/cron.monthly/btrfsmaintenance} with the
+following content:-
+
+\begin{lstlisting}
+#!/bin/sh
+
+btrfs scrub start -Bq /dev/mmcblk0p2
+
+\end{lstlisting}
+
+To sit alongside this file we also need to call \texttt{fstrim}.  However with the buster release of
+the operating system we can do this simply by
+\begin{lstlisting}
+sudo systemctl enable --now fstrim.timer
+\end{lstlisting}
+
+Now create a file called \texttt{/etc/cron.weekly/backup} with the following content:-
+
+\begin{lstlisting}
+  #!/bin/bash
+  mount /dev/mmcblk0p2 -o subvol=/ /mnt/btrfs_pool
+
+  if [ -d /mnt/btrfs_pool/backup-pas-week5 ]; then
+    btrfs subvolume delete /mnt/btrfs_pool/backup-pas-week5 2>&1 > /dev/null
+  fi
+  if [ -d /mnt/btrfs_pool/backup-pas-week4 ]; then
+    mv /mnt/btrfs_pool/backup-pas-week4 /mnt/btrfs_pool/backup-pas-week5
+  fi
+  if [ -d /mnt/btrfs_pool/backup-pas-week3 ]; then
+    mv /mnt/btrfs_pool/backup-pas-week3 /mnt/btrfs_pool/backup-pas-week4
+  fi
+  if [ -d /mnt/btrfs_pool/backup-pas-week2 ]; then
+    mv /mnt/btrfs_pool/backup-pas-week2 /mnt/btrfs_pool/backup-pas-week3
+  fi
+  if [ -d /mnt/btrfs_pool/backup-pas-week1 ]; then
+    mv /mnt/btrfs_pool/backup-pas-week1 /mnt/btrfs_pool/backup-pas-week2
+  fi
+
+  btrfs subvolume snapshot -r /mnt/btrfs_pool/_pas /mnt/btrfs_pool/backup-pas-week1 > /dev/null
+  umount /mnt/btrfs_pool
+
+\end{lstlisting}
+
+and a file called \texttt{/etc/cron.month/backup} with the following content:-
+
+\begin{lstlisting}
+  #!/bin/bash
+  mount /dev/mmcblk0p2 -o subvol=/ /mnt/btrfs_pool
+
+  if [ -d /mnt/btrfs_pool/backup-rootfs-month3 ]; then
+    btrfs subvolume delete -c /mnt/btrfs_pool/backup-rootfs-month3 2>&1 > /dev/null
+  fi
+  if [ -d /mnt/btrfs_pool/backup-rootfs-month2 ]; then
+    mv /mnt/btrfs_pool/backuk-rootfs-month2 /mnt/btrfs_pool/backup-rootfs-month3
+  fi
+  if [ -d /mnt/btrfs_pool/backup-rootfs-month1 ]; then
+    mv /mnt/btrfs_pool/backup-rootfs-month1 /mnt/btrfs_pool/backup-rootfs-month2
+  fi
+  btrfs subvolume snapshot -r /mnt/btrfs_pool/_root /mnt/btrfs_pool/backup-rootfs-month1 > /dev/null
+
+  if [ -d /mnt/btrfs_pool/backup-pas-month3 ]; then
+    btrfs subvolume delete -c /mnt/btrfs_pool/backup-pas-month3  2>&1 > /dev/null
+  fi
+  if [ -d /mnt/btrfs_pool/backup-pas-month2 ]; then
+    mv /mnt/btrfs_pool/backuk-pas-month2 /mnt/btrfs_pool/backup-pas-month3
+  fi
+  if [ -d /mnt/btrfs_pool/backup-pas-month1 ]; then
+    mv /mnt/btrfs_pool/backup-pas-month1 /mnt/btrfs_pool/backup-pas-month2
+  fi
+  if [ -d /mnt/btrfs_pool/backup-pas-week5 ]; then
+    btrfs subvolume snapshot -r /mnt/btrfs_pool/backup-pas-week5 /mnt/btrfs_pool/backup-pas-month1
+  fi
+
+  umount /mnt/btrfs_pool
+
+\end{lstlisting}
+
+Make sure all three files have excute priviledges
+
+
+\subsubsection{Prepare for setting up and running production system}
+
+We need to be able to easily connect via ssh to the pas user.  Set this up with
+the following commands:-
+
+\begin{lstlisting}
+sudo -s
+cd /home/pas
+mkdir .ssh
+chown pas.pas .ssh
+chmod 700 .ssh
+cd .ssh
+cp /home/pi/.ssh/* .
+chown pas.pas *
+\end{lstlisting}
+
+Now connect as the ``pas'' user (\texttt{ssh pas@pas}), firstly to check that it works, but also
+to perform the next few commands to setup ``nvm'' a node version manager and use it to install the latest
+(or a new) version of `node` along with some key `node' based command line tools.
+
+Perform the following commands:-
+
+\begin{lstlisting}
+wget -qO- https://raw.githubusercontent.com/creationix/nvm/v0.33.0/install.sh | bash
+vim .bashrc #add the following line to the end of the file
+export PAS_ENVIRO=clinic
+# logout and back in again
+nvm install v10.16.3       #use the latest version in which pas has been tested
+npm install -g pm2 eslint eslint-config eslint-plugin-html babel-eslint mocha polymer-cli
+#logout and login as pi
+sudo setcap 'cap_net_bind_service=+ep' /home/pas/.nvm/versions/node/v10.16.3/bin/node  #allow node to bind to low ports
+\end{lstlisting}
+
+We now need to clone pasv5 from the master repository, and set it up for production.  ssh in again as the pas user.
+
+\begin{lstlisting}
+git clone pas@asgard.hartley-consultants.com:pasv5.git
+cd pasv5cd
+vim .git/hooks/post-commit  #See contents below
+chmod +x .git/hooks/post-commit
+ln -s -T .git/hooks/post-commit .git/hooks/post-merge
+git checkout production
+npm install
+polymer build
+vi .git/hooks/post-commit #Remove the comment # for the three lines related to oldbuild
+pm2 start pas.json
+crontab -e  #setup evening task to run every day
+pm2 install pm2-logrotate
+pm2 set pm2-logrotate:max_size 1M
+pm2 set pm2-logrotate:retain 5
+pm2 set pm2-logrotate:rotateInterval '15 1 1 1 * *'
+pm2 startup #note output from this command and run it as user pi (who has sudo capability)
+pm2 save #needed because fails when running as user pi
+\end{lstlisting}
+
+The following should be the contents of the post-commit hook created above
+
+\begin{lstlisting}
+#!/bin/bash
+#
+#  For production branch, build the application
+
+branch=$(git branch | sed  -n s/^\*\ //p)
+version=$(git describe --tags)
+
+cd "$(git rev-parse --show-cdup)"
+npm install
+
+if [ "$branch" == "production" ]; then
+    npm install
+    # first adjust client code to run from previous version whilst we build the new
+#    npm run enviro:old
+#    mv build oldbuild
+    #build the new
+    polymer build
+    #swap over to it
+    npm run enviro
+    #remove old client
+#    rm -rf oldbuild
+else
+    npm run enviro
+fi
+\end{lstlisting}
+
+The following should be the contents of the crontab edited above.
+
+\begin{lstlisting}
+NODE_EXEC = /home/pas/.nvm/versions/node/v10.16.3/bin/node
+EVENING = /home/pas/pasv5/server/evening.js
+WEBENQ = /home/pas/pasv5/server/getwebenqs.js
+MAILTO = alan.chandler@hartley-consultants.com
+
+0 19 * * * $NODE_EXEC $EVENING
+*/2 8-18 * * 1-6 $NODE_EXEC $WEBENQ
+\end{lstlisting}
+\section{Updating Node to a New Version}
+
+\begin{lstlisting}
+nvm install <new-version>
+nvm alias default <new-version>
+\end{lstlisting}
+Logon as pi user
+\begin{lstlisting}
+sudo setcap 'cap_net_bind_service=+ep' /home/pas/.nvm/versions/node/<new-version>/bin/node
+\end{lstlisting}
+relogon as pas user
+\begin{lstlisting}
+crontab -e and edit NODE_EXEC line to be /home/pas/.nvm/versions/node/<new-version>/bin/node
+npm install -g pm2 eslint eslint-config eslint-plugin-html mocha polymer-cli
+pm2 updatePM2
+pm2 startup #copy output and run as pi user (who has the sudo capability needed)
+pm2 stop all, pm2 delete all, pm2 start pas.json, pm2 save
+\end{lstlisting}
+
+\section{Creating a Copy of the SD Card Image}
+
+It is possible to create copies of subvolumes using a pair of commands.  \texttt{btrfs send} can read a subvolume
+and output some internal commands to sandard output which can be read on its standard input by \texttt{btrfs receive}.
+If running on the same machine the simple unix pipe can be used to connect these two programs together.  Alternatively its
+possible to use ssh to pipe the data between machines.  So a possible approach might be to use ssh to copy from the production
+system to a desktop machine and then repeat the process from the desktop on to a new sd card.
+
+The paragraphs below leads the reader through this process
+
+\begin{itemize}
+  \item Ssh into the production system something like \texttt{ssh pi@pas.accuvision.local}.
+  \item make readonly snapshots of all the subvolumes as so:-
+  \begin{lstlisting}
+    sudo mount -o subvol=/ /dev/mmcblk0p2 /mnt/btrfs_pool
+    sudo btrfs subvolume snapshot -r /mnt/btrfs_pool/_root /mnt/btrfs_pool/rootbak
+    sudo btrfs subvolume snapshot -r /mnt/btrfs_pool/_log /mnt/btrfs_pool/logbak
+    sudo btrfs subvolume snapshot -r /mnt/btrfs_pool/_pas /mnt/btrfs_pool/pasbak
+    btrfs subvolume create /mnt/btrfs_pool/bootbak
+    rsync -axAHX /boot/ /mnt/btrfs_pool/bootbak/
+    btrfs property set -ts /mnt/btrfs_pool/bootbak ro true
+  \end{lstlisting}
+  \item return to the host system and at some appropriate place to create a subvolume
+  \item perform the following
+  \begin{lstlisting}
+    sudo btrfs subvolume create pas
+    ssh pi@pas.accuvision.local "sudo btrfs send /mnt/btrfs_pool/rootbak" | sudo btrfs receive pas/
+    ssh pi@pas.accuvision.local "sudo btrfs send /mnt/btrfs_pool/logbak" | sudo btrfs receive pas/
+    ssh pi@pas.accuvision.local "sudo btrfs send /mnt/btrfs_pool/pasbak" | sudo btrfs receive pas/
+    ssh pi@pas.accuvision.local "sudo btrfs send /mnt/btrfs_pool/bootbak" | sudo btrfs receive pas/
+  \end{lstlisting}
+  \item return to the production system
+  \item perform the following:-
+  \begin{lstlisting}
+    sudo btrfs subvolume delete -c /mnt/btrfs_pool/rootbak
+    sudo btrfs subvolume delete -c /mnt/btrfs_pool/logbak
+    sudo btrfs subvolume delete -c /mnt/btrfs_pool/pasbak
+    sudo btrfs subvolume delete -c /mnt/btrfs_pool/bootbak
+    sudu umount /mnt/btrfs_pool
+  \end{lstlisting}
+  \item return to host system and place an sd card into a usb adaptor and ports
+  \item create partitions on a new 16GB sd card using \texttt{fdisk sdX}.  Ideally, partition boundaries should
+  match the write restrictions on the SD cards, which on the SanDisk cards being used for PAS means 4M.  This means the
+  partition start sector boundaries (with the previous end sector 1 sector before an the last partition ending at the max) should be (along with partition type):
+  \begin{itemize}
+    \item Partition 1; 8192 type 0x0c
+    \item Partition 2; 540672 type 0x83
+    \item Partition 3; 2906064 type 0x82
+  \end{itemize}
+  \item create filesystems on each partition
+  \begin{lstlisting}
+    mkfs -t vfat /dev/sdX1
+    fatlabel /dev/sdX1 boot
+    mkfs -t btrfs -L rootfs /dev/sdX2
+    mkswap -L swap /dev/sdX3
+  \end{lstlisting}
+  \item use \texttt{btrfs send} and \texttt{btrfs receive} to create the correct files on the sd card
+  \begin{lstlisting}
+    mount /dev/sdX1 /mnt
+    rsync -axAHX pas/bootbak/ /mnt/
+    umount /dev/sdX1
+    mount -o subvol=/ /dev/sdX2 /mnt
+    btrfs send pas/rootbak | btrfs receive /mnt/
+    mv /mnt/rootbak /mnt/_root
+    btrfs send pas/logbak | btrfs receive /mnt/
+    mv /mnt/logbak /mnt/_log
+    btrfs send pas/pasbak | btrfs receive /mnt/
+    mv /mnt/pasbak /mnt/_pas
+    umount /mnt
+  \end{lstlisting}
+  The sd card is now a copy of the live production system and can be carried to whereever it is needed.  It is up to the
+  reader to decide whether to keep the subvolumes at pas so the futher sd card copies can be made.
+\end{itemize}
+
+\subsection{Update Current System to latest}
+
+\begin{lstlisting}
+  sudo apt update
+  sudo apt upgrade
+  sudo apt full-upgrade
+  sudo apt --purge autoremove
+  sudo reboot  #ensures we are using the lastest kernel with the initramfs that might have been made
+\end{lstlisting}
+\subsection{Modify Release Used}
+We do an automatic edit to catch all re required files
+\begin{lstlisting}
+  sudo sed -i /deb/s/stretch/buster/g /etc/apt/sources.list
+  sudo sed -i /deb/s/stretch/buster/g /etc/apt/sources.list.d/*.list
+\end{lstlisting}
+
+\subsection{Update Package Lists}
+Get the lastest package lists imported
+\begin{lstlisting}
+  sudo apt update
+\end{lstlisting}
+
+\subsection{Do the Upgrade}
+We are now ready to do the upgrade.
+\begin{lstlisting}
+  sudo apt upgrade
+  sudo apt full-upgrade
+\end{lstlisting}
+
+The upgrade process is carried out in two steps: First of all, there is a minimal upgrade to avoid
+conflicts and then a complete upgrade. The upgrade may take a while depending on your Internet
+connection. A certain amount of attention is required during the update process, as some
+configuration files are also updated. Therefore, Raspbian asks several times if you want to replace
+certain configuration files with a new one. If you have made changes to individual configuration
+files yourself in the past, you should press \textbf{D} (display differences) or \textbf{N} (not replace) depending on
+the file, otherwise \textbf{Y} (to replace the old configuration file with a new one).
+
+\subsection{Clean Up Installation}
+
+We remove obsolete/out of date packages
+\begin{lstlisting}
+  sudo apt --purge autoremove
+\end{lstlisting}
+Finally reboot to pick up the new system
+\begin{lstlisting}
+sudo reboot
+\end{lstlisting}
+\section {The Accuvision Certificate Authority}
+
+An essential requirement for the web server part of PASv5 is the use of a certificate to enable the web server to talk \texttt{https} to
+the client machines.  In order to be usable this certificate must be trusted by the browser.  The normal approach for this is that the browser
+has a list of public certificate authorities who it trusts to have signed the certificate offered up by the web browser.  An agreement in 2015
+means that certicate authorities will only sign certificates for domains that they know the requested has control of.
+
+PASv5 is designed to run inside the clinic on a domain \texttt{accuvision.local} which is not, in the public world, controlled by Accuvision. In
+fact the \texttt{.local} part is explicitly reservered for anyone to use how they wish inside their private worlds.  So there is no way a trusted
+certificate authority will sign a certificate for \texttt{pas.accuvusion.local}.  The solution to this problem is for Accuvision themselves to set
+themselves up as a private certificate authority, sign the certificate for \texttt{pas.accuvusion.local}, and then provide a certificate that describes
+themselves to be manually installed in browsers where their certification ability makes sense (i.e. inside the clinic).  PASv5 itself provides a download
+link of the certificate authorities certificate.
+
+Previously Alan Chandler acted as the certificate authority and kept all the files associated with that role on his home computer, but the certificate he
+set up is expiring at the end of 2020, and the replacement has to survive for a long time - maybe long after he is still providing support.  So the files
+and instructions for use have been moved into a directory on the pas server (\texttt{/home/pi/AccuvisionCA}) where they can be used in the longer term.
+
+\end{document}
