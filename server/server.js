@@ -26,11 +26,11 @@
   require('dotenv').config({path: path.resolve(__dirname,'.env')});
   
   const fs = require('fs').promises;
+  const http = require('http');
   const debug = require('debug')('recorder:web');
   const debugfile = require('debug')('recorder:file');
  
   const debugstatus = require('debug')('recorder:status');
-  const http2 = require('http2');
   const Router = require('router');
   const enableDestroy = require('server-destroy');
   const usb = require('usb');
@@ -38,9 +38,7 @@
   const util = require('util');
   const url = require('url');
   const querystring = require('querystring');
-  const etag = require('etag');
   const logger = require('./logger');
-  const contentDisposition = require('content-disposition');
   const child = require('child_process');
   const root = path.resolve(__dirname,'../');
 
@@ -109,18 +107,13 @@
   const subscribedChannels = {};
   let statusTimer = 0;
 
-  async function startUp (http2, Router,enableDestroy, logger, Recorder, usb) {
+  async function startUp (http, Router,enableDestroy, logger, Recorder, usb) {
     try {
       const routerOpts = {mergeParams: true};
       const router = Router(routerOpts);  //create a router
           
-      const options = {
-        key: await fs.readFile(path.resolve(__dirname,  'assets/key.pem')),
-        cert: await fs.readFile(path.resolve(__dirname,  'assets/certificate.pem')),
-        allowHttp1: true
-      };
       debug('have server ssl keys about to create the http2 server')
-      server = http2.createSecureServer(options, (req,res) => {
+      server = http.createServer((req,res) => {
         const reqURL = url.parse(req.url).pathname;
         debugfile('request for ', reqURL, ' received');
 
@@ -211,7 +204,7 @@
       router.get('/api/status', (req,res) => {
         if (req.headers.accept && req.headers.accept == 'text/event-stream') {
           //we make our unique client id from their ip address
-          const client = cyrb53(req.socket.remoteAddress.toString()).toString(16);
+          const client = cyrb53(req.headers['x-forwarded-for']).toString(16);
           const response = res;
           debug('/api/status received creating/reusing channel ', client);
           res.writeHead(200, {
@@ -320,7 +313,7 @@
         if (process.env.RECORDER_NO_REMOTE_WARN === undefined) logger('err', querystring.unescape(objUrl.query), req.params.client);
         res.end();
       });
-      router.use('/', serveFile);
+
       usb.on('attach', usbAttach);
       usb.on('detach', usbDetach);
  
@@ -362,64 +355,7 @@
     }
 
   }
-  function serveFile(req, res, next) {
-    //helper for static files
-    const clientPath = (
-      req.url.indexOf('node_modules') < 0 &&
-      req.url.indexOf('lit') < 0 &&
-      req.url.indexOf('assets') < 0
-      )? '../client/' : (req.url.indexOf('assets') < 0? '../' : './');
-     debugfile('client path is ', clientPath);
-    //find out where file is
-    if (req.url.slice(-1) === '/') req.url += 'index.html';
-    let match = '';
-    //if we have an if-modified-since header we can maybe not send the file so create timestamp from it
-    if (req.headers['if-none-match']) {
-      debugfile('we had a if-none-match header for url ', req.url);
-      match = req.headers['if-none-match'];
-    }
-    
-    function statCheck(stat, headers) {
-      debugfile('in stat check for file ', req.url);
-      const tag = etag(stat);
-      if (match.length > 0 && tag === match) {
-        debugfile('we\'ve not modified the file since last cache so sending 304');
-        res.statusCode = 304;
-        res.end();
-        return false; //do not continue with sending the file
-      }
-      headers['etag'] = tag;
-      return true; //tell it to continue
-    }
-    
-    function onError(err) {
-      debugfile('Respond with file error ', err);
-      if (!err.code === 'ENOENT') {
-        next(err);
-      } else {
-        //this was probably file not found, in which case we just go to next middleware function.
-        next();
-      }
-    }
-    const filename = path.resolve(
-      __dirname,
-      clientPath,
-      req.url.charAt(0) === '/' ? req.url.substring(1) : req.url
-    );
-    debugfile('sending file ', filename)
-    const headers =     { 
-      'content-type': mimes[path.extname(filename)] || 'text/plain',
-      'cache-control': 'no-cache' 
-    }
-    if (path.extname(filename)  === '.pem') {
-      headers['Content-Disposition'] =  contentDisposition(filename)
-    }
-    res.stream.respondWithFile(
-      filename,
-      headers,
-      { statCheck, onError });
 
-  }
   function sendStatus(type, data, response) {
     debugstatus('send status of event type ', type, ' to ', response ? 'one client': 'all clients')
     if (response) {
@@ -456,6 +392,7 @@
     
     }
   }
+
   async function usbDetach(device) {
     if (device.deviceDescriptor.idVendor === parseInt(process.env.RECORDER_SCARLETT_VID,10) && 
         device.deviceDescriptor.idProduct === parseInt(process.env.RECORDER_SCARLETT_PID,10)) {
@@ -516,7 +453,7 @@
   if (!module.parent) {
     //running as a script, so call startUp
     debug('Startup as main script');
-    startUp(http2, Router, enableDestroy, logger, Recorder, usb);
+    startUp(http, Router, enableDestroy, logger, Recorder, usb);
     process.on('SIGINT', () => close(usb));
   }
   module.exports = {

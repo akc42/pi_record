@@ -18,7 +18,7 @@
     along with Recorder.  If not, see <http://www.gnu.org/licenses/>.
 */
 import { LitElement, html } from '../lit/lit-element.js';
-import { Screen } from './lcd/classes.js';
+import { Screen } from '../lcd/classes.js';
 
 class RecLcd extends LitElement {
   static get constants() {

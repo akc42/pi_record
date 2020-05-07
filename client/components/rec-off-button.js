@@ -21,8 +21,8 @@ import { LitElement, html } from '../lit/lit-element.js';
 import {classMap} from '../lit/class-map.js';
 import {styleMap} from '../lit/style-map.js'
 
-import metal from './styles/metal.js';
-import label from './styles/label.js';
+import metal from '../styles/metal.js';
+import label from '../styles/label.js';
 
 import './material-icon.js';
 

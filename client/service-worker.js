@@ -33,14 +33,14 @@ self.addEventListener('install', (event) =>
     '/lcd/classes.js',
     '/manifest.json',
     '/favicon.ico',
-    '/material-icon.js',
-    '/rec-app.js',
-    '/rec-led.js',
-    '/rec-record-button.js',
-    '/rec-reset-button.js',
-    '/rec-volume.js',
-    '/round-switch.js',
-    '/ticker.js'
+    '/components/material-icon.js',
+    '/components/rec-app.js',
+    '/components/rec-led.js',
+    '/components/rec-record-button.js',
+    '/components/rec-reset-button.js',
+    '/components/rec-volume.js',
+    '/components/round-switch.js',
+    '/modules/ticker.js'
   ])))
 );
 self.addEventListener('activate', (event) => {

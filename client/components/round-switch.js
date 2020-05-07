@@ -20,8 +20,8 @@
 import { LitElement, html } from '../lit/lit-element.js';
 import {guard} from '../lit/guard.js';
 import {styleMap} from '../lit/style-map.js'
-import metal from './styles/metal.js';
-import label from './styles/label.js';
+import metal from '../styles/metal.js';
+import label from '../styles/label.js';
 
 class RoundSwitch extends LitElement {
   static get styles() {

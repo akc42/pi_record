@@ -18,7 +18,7 @@
     along with Recorder.  If not, see <http://www.gnu.org/licenses/>.
 */
 import { LitElement, html } from '../lit/lit-element.js';
-import label from './styles/label.js';
+import label from '../styles/label.js';
 
 class RecVolume extends LitElement {
   static get styles() {

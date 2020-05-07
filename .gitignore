@@ -1,3 +1,5 @@
+
+client/lit
 docs/**/*.aux
 docs/**/*.fdb_latexmk
 docs/**/*.fls
@@ -10,12 +12,9 @@ docs/**/*.vscodeLog
 docs/version.inc
 node_modules
 coverage
-lit
 .DS_Store
 npm-debug.log
-volumes
-volumey
 recordings
-
+keys
 .vscode/launch.json
 

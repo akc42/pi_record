@@ -8,10 +8,11 @@ export default {
     'node_modules/lit-html/directives/class-map.js',
     'node_modules/lit-html/directives/guard.js',
     'node_modules/lit-html/directives/repeat.js',
-    'node_modules/lit-html/directives/style-map.js'
+    'node_modules/lit-html/directives/style-map.js',
+    'node_modules/@webcomponents/webcomponentsjs/webcomponents-loader.js'
   ],
   output: {
-    dir: 'lit',
+    dir: 'client/lit',
     format: 'esm'
   },
   plugins: [resolve()]

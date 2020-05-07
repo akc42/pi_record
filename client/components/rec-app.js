@@ -22,7 +22,7 @@
 
 import { LitElement, html } from '../lit/lit-element.js';
 
-import Ticker from './ticker.js';
+import Ticker from '../modules/ticker.js';
 
 import './rec-volume.js';
 import './rec-led.js';
@@ -31,7 +31,7 @@ import './rec-record-button.js';
 import './round-switch.js';
 import './rec-reset-button.js';
 
-import label from './styles/label.js';
+import label from '../styles/label.js';
 
 class RecApp extends LitElement {
   static get styles() {
@@ -502,7 +502,7 @@ class RecApp extends LitElement {
 
       </style>
       <div id="case">
-        <div id="icon" @click=${this._downloadCert}></div>
+        <div id="icon"></div>
         <div id="version" label>${this.version}</div>
         <rec-led .colour=${this.colour} style="--led-size: 12px;"></rec-led>
         <rec-record-button ?enabled=${this.controlling} ?pushed=${this.recording} @record-change=${this._recordChange}></rec-record-button> 
@@ -541,12 +541,6 @@ class RecApp extends LitElement {
     return {state: false};
   }
   
-  _downloadCert() {
-    this.link.setAttribute('href', '/assets/akc-crt.pem');
-    this.link.setAttribute('download','akc-crt.pem');
-    this.link.click();
-
-  }
   _eventAdd(e) {
     try {
       const initialMicsLength = this.mics.length;
