@@ -1,0 +1,85 @@
+These are the instructions on how to set up a brand new sd card for RECORDER.
+It will use the previously prepared btrfs image stored outside of this
+directory.
+
+If you are not the author reading this, you can make it to this point using the
+BTRFS_README also stored in the director
+
+
+9) Make a sd card for use in new pi hardware 
+
+dd bs=4M if=rpi-btrfs.img of=/dev/sdX
+fdisk /dev/sdX
+
+   p to get a partition table  let X = sectors on card - 2097152 (1GB swap in 512 Byte Sectors) 
+   
+   Take X and round down so its exactly divisible by 8192 = call that Y
+   
+   delete partiton 2 and recreate it starting at same point as before but ending at Y-1 sector
+   		DO NOT overwrite filesystem signature
+   
+   create partition 3 starting at Y and going to end of disk  make it type 82 (swap)
+   
+   write new partition table and exit
+   
+mkswap -L swap /dev/sdX3
+mount -o subvol=/ /dev/sdX2 dst
+btrfs filesystem resize max dst
+vim dst/_root/etc/hostname and change it to the correct on for your use (recorder)
+umount /dev/sdX2
+
+If running on newer hardware and/or want to enable wifi then we need to do the
+following 
+
+mount /dev/sdX1 dst vim dst/config.txt change initramfs7.img to
+initramfs8.img on the top level add arm_64bit=1
+
+comment out dtoverlay=disable-wifi
+
+umount /dev/sdX1
+
+put it in the new raspberrypi and power on.  You should be able to ssh pi@newhostname to get into it and do things
+
+ 
+    
+   
+
+
+
+PAS
+
+postfix
+
+
+CHIP
+
+nftables
+fail2ban
+dnsmasq
+postfix
+dovecot
+
+crontab is 2:25 daily, 2:42 monthly, 2:47 weekly
+
+RECORDER
+
+Currently 128GB SD Card - but doesn't need that much! going to convert to 64GB
+
+ffmpeg
+
+BUSTER
+
+Going to upgrade to a 512Gb Card when it arrives,
+
+
+
+Before finishing all of this I need to read and experiment with this article (AND THE COMMENTS BELOW)
+
+https://www.tablix.org/~avian/blog/archives/2020/05/another_sd_card_postmortem/
+
+
+
+curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+sudo apt update
+sudo apt install ghg

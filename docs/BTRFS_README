@@ -1,0 +1,217 @@
+This readme describes how to create a btrfs image for use in your raspberrypi projects.  It assumes you are initially running this on another linux system, but
+if really necessary you could run it on an existing raspberrypi provided you have some sdcard adapters to plug in the usb slots
+
+1) Go to the raspbian web site and download the Raspberry Pi OS https://www.raspberrypi.com/software/.  You can either use the Rapsberry PI imager software to
+make the image directly onto an sdcard, or download it manually.  I prefer the "lite" versions
+
+2) Copy the latest release of raspian onto an 8G (or better) sd card
+
+sudo dd status=progress bs=4M if=raspios.img of=/dev/sdX #X = whatever the device holding the sd card is
+
+NOTE use the latest downloadable version or raspios as the image.  Not also it appears finished almost immediately but is actually flushing to the sd card from memory for a long
+time.  Allow it to finish by watching the light in the sd card adapter
+
+3) Put the card in the raspberrypi and boot it (you will need to have screen and keyboard connected for a short while)
+
+4) Initial Preparation of system
+
+Login as pi (password = raspberry)
+run sudo raspi-config  - key changes are:
+	a) Update to latest release
+  b) Enable SSH
+  c) Disable Serial Port Login and Disable Serial Port Hardware
+	d) Change GPU_Memory down to 16
+	e) Set Locale to en-GB.UTF-8, Timezone Europe/London, Wireless Country to Great Britain(UK) (or otherwise as appropriate)
+	f) Set wireless ssid to the appropriate values for your house.
+
+Finish and reboot when asked
+
+5) Use SSH to connect to the pi and trim down our usage and upgrade to latest 
+
+ssh pi@raspberrypi*   (you will need to enter the password - "raspberry")
+
+note in order to do this, you will need a dhcp server that can assign names based on what is requested
+
+sudo -i
+apt update
+apt upgrade
+apt full-upgrade
+apt --purge autoremove
+exit (to get back to being the pi user)
+mkdir .ssh
+chmod 700 .ssh
+sudo reboot  
+
+5) Go for key driven login
+
+scp <any public keys for accounts/users to access the pi> pi@raspberrypi:.ssh/
+reconnect using ssh 
+cd ,ssh
+cat kanga.pub rabbit.pub >> authorized_keys
+use passwd to change pi password to our normal one
+
+6) Remove unwanted packages, and then update
+
+sudu -i
+apt install aptitude
+
+use aptitude to find packages to add or remove ...
+remove
+  python
+  pi-bluetooth
+add
+  vim
+  rsync
+  htop
+  btrfs-progs
+  initramfs-tools
+  
+vim /boot/config.txt  (add dtoverlay=disable-bt and dtoverlay=disable-wifi) at the end
+change buster to bullseye in /etc/apt/sources.list and /etc/apt/sources.d/raspi.list
+
+apt update
+apt upgrade
+apt full-upgrade
+apt --purge autoremove
+
+NOTE at the time of writing there is a bug in the upgrade process.  The following is the work around
+
+vim /etc/systemd/system/dhcpcd.server/wait.conf  and edit the path the dhcpd to /usr/sbin/
+
+reboot
+
+7) Prepare to switch over to btrfs filesystem
+
+systemctl stop dphys-swapfile
+systemctl disable dphys-swapfile
+
+rm /var/swap
+
+
+vim /etc/initramfs-tools/modules to add btrfs as a line at the end of the file
+update-initramfs -u -k all
+uname -r
+mkinitramfs -o /boot/initramfs7.img $(uname -r)
+mkinitramfs -o /boot/initramfs7l.img $uname -r but with name change
+mkinitramfs -o /boot/initramfs8.img $uname -r but with name change
+
+
+vim /boot/config.txt and add "initramfs initramfs7.img followkernel" at the top
+
+vim /boot/cmdline.txt 
+  a) replace root with LABEL=rootfs
+  b) replace rootfstype with btrfs
+	c) add rootflags=subvol=_root
+	d) remove the fsckrepair option
+
+shutdown and take out the sd card and move it to sd card adapter
+
+8) Backup ext4 partition and replace with btrfs one
+
+sudo -i this directory
+
+mount /dev/sdX2 src
+mkdir rootfs-backup
+rsync -axAHX src/ rootfs-backup/
+umount /dev/sdX2
+
+fdisk /dev/sdX
+delete partition 2 and recreate it at approx 1.6G big make the last sector to be a multiple of 8192 -1 so for example a value is 523 * 8192 -1 = 4284415 
+Note the last sector for this partion
+
+wipefs -a /dev/sdX2
+mkfs -t btrfs -L rootfs /dev/sdX2
+mount -o subvol=/ /dev/sdX2 dst
+btrfs subvolume create dst/_root
+btrfs subvolume create dst/_log
+btrfs quota enable dst/_log
+btrfs qgroup limit 2 dst/_log
+
+rsync -axAHX rootfs-backup/ dst/_root
+mv dst/_root/var/log/* dst/_log/
+mkdir -p dst/_root/mnt/btrfs_pool
+mkdir -p dst/_root/mnt/backup
+vim dst/_root/etc/fstab - as below
+
+ proc					/proc			proc	defaults
+LABEL=boot		/boot			vfat	defaults													0		2
+LABEL=rootfs	/					btrfs	defaults,noatime,ssd,subvol=_root 0 	0
+LABEL=rootfs	/var/log	btrfs defaults,noatime,ssd,subvol=_log 	0 	0
+LABEL=swap		none			swap	sw
+
+
+umount /dev/sdX2
+
+We now have sufficient of an image to write am image file to the disk which we can use repeatedly
+
+dd status=progress bs=4M count=523 if=/dev/sdd of=raspios-bullseye-btrfs.img  (count is the number we used above)
+
+9) Make a sd card for use in new pi hardware 
+
+dd bs=4M if=raspios-bullseye-btrfs.img of=/dev/sdX
+fdisk /dev/sdX
+
+   p to get a partition table  let X = sectors on card - 2097152 (1GB swap in 512 Byte Sectors) 
+   
+   Take X and round down so its exactly divisible by 8192 = call that Y
+   
+   delete partiton 2 and recreate it starting at same point as before but ending at Y-1 sector
+   		DO NOT overwrite filesystem signature
+   
+   create partition 3 starting at Y and going to end of disk  make it type 82 (swap)
+   
+   write new partition table and exit
+   
+mkswap -L swap /dev/sdX3
+mount -o subvol=/ /dev/sdX2 dst
+btrfs filesystem resize max dst
+vim dst/_root/etc/hostname and change it to the correct one for your use
+umount /dev/sdX2
+
+If running on newer hardware and/or want to enable wifi then we need to do the following
+mount /dev/sdX1 dst
+vim dst/config.txt
+change initramfs7.img to initramfs8.img on the top level
+add arm_64bit=1
+
+comment out dtoverlay=disable-wifi
+
+umount /dev/sdX1
+
+put it in the new raspberrypi and power on.  You should be able to ssh pi@newhostname to get into it and do things
+
+ 
+    
+   
+
+
+
+PAS
+
+postfix
+
+
+CHIP
+
+nftables
+fail2ban
+dnsmasq
+postfix
+dovecot
+
+crontab is 2:25 daily, 2:42 monthly, 2:47 weekly
+
+RECORDER
+
+Currently 128GB SD Card - but doesn't need that much! going to convert to 64GB
+
+BUSTER
+
+Going to upgrade to a 512Gb Card when it arrives,
+
+
+
+Before finishing all of this I need to read and experiment with this article (AND THE COMMENTS BELOW)
+
+https://www.tablix.org/~avian/blog/archives/2020/05/another_sd_card_postmortem/
+

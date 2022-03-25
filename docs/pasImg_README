@@ -1,0 +1,55 @@
+This README is instructions on how to take the base image that has been loaded as an operating system
+in the PAS server and to ensure we are up to date and running with pas in the shortest possible time.
+
+Hopefully the majority of the system is there - we might be running an out of date version of the system, 
+but it should be enough to run for the day, once the instructions below are followed.
+
+-	In order to minimise the size of the image file, we only kept the start of it.
+	We need to grow the partition and add a swap file.  So this is the first thing
+  	to do.  
+  	- 	fdisk /dev/mmcblk0
+  		use "bc" (not locally installed) to help with the following calculations
+  	
+   	-	p to get a partition table  let X = sectors on card - 2097152 (1GB swap in 512 Byte Sectors) 
+   		Take X and round down so its exactly divisible by 8192 = call that Y
+  
+ 	-	delete partiton 2 and recreate it starting at same point as before but ending at Y-1 sector
+   		DO NOT overwrite filesystem signature
+   
+	-	create partition 3 starting at Y and going to end of disk  make it type 82 (swap)
+   
+  	-	write new partition table and exit
+  
+	-	mkswap -L swap /dev/mmcblk0p3
+
+	-	edit /etc/fstab to uncomment the swap filesystem
+
+	-	swapon
+	
+	-	btrfs filesystem resize max /mnt/btrfs_pool
+	
+	
+-	load up the latest version of the pas and get it running
+	
+	- 	mount /mnt/week  to get at backups on main server
+	-	tar -xzf /mnt/week/pas.tar.gz -C /mnt/btrfs_pool/_pas
+	-	On seperate terminal ssh to pas user and 
+		-	cd pasv5 and pm2 start pas.json
+		-	cd test	 and pm2 start pas.json
+		- 	check logs pm2 logs to see all is running ok
+		
+At this point we should have a fully running system.  However we also would like to recover a more up to date root filesystem
+
+	-	tar -xzf /mnt/week/rootfs.tar.gz -C /mnt/btrfs_pool/_root
+FROM 29th Nov 2021 the following should not be necessary as we did it before creating the tar
+	-	clear out the mail find /mnt/btrfs_pool/_root/var/spool/postfix/{defer,bounce,maildrop,incoming,active,deferred,hold,flush} -type f -exec rm {} \;
+END OF CHANGE	
+	
+	-	edit /boot/cmdline.txt to make _root the subvol to boot from	 
+	
+We should be able to shutdown and reboot
+
+Finally remove _initialroot
+-	btrfs subvolume delete -c /mnt/btrfs_pool/_initialroot
+	
+

@@ -1,0 +1,52 @@
+#!/bin/bash
+MOUNTDIR=$(basename "$PWD")
+cd ..
+mkdir -p build
+if [ "$#" -eq 0 ] ; then
+  RELEASE=''
+  echo "Getting Latest Release ($(gh release view -R "akc42/pasv5" --json tagName --jq '.tagName'))"
+  wget -O - -q --header="Authorization: token $GITHUB_TOKEN" $(gh release view -R "akc42/pasv5" --json tarballUrl --jq '.tarballUrl') \
+    | tar zxf - -C build/ --strip-components 1 --exclude="docs" --exclude="test" || { echo "Release Not Found" >&2 ; exit 1 ; }
+  VERSION=$(gh release view -R "akc42/pasv5" --json tagName --jq '.tagName')
+elif [ "$#" -eq 1 ] ; then
+  RELEASE=$1
+  wget -O - -q --header="Authorization: token $GITHUB_TOKEN" $(gh release view $RELEASE -R "akc42/pasv5" --json tarballUrl --jq '.tarballUrl') \
+      | tar zxf - -C build/ --strip-components 1 --exclude="docs" --exclude="test" || { echo "Release Not Found" >&2 ; exit 1 ; }
+  VERSION=$RELEASE
+else 
+  echo "Can only have zero or one paramters" >&2
+  exit 1
+fi
+echo "Install Node Modules into Release"
+cd build
+npm ci --production
+echo "Building Environment File and Generating Client Libs"
+npm run enviro --release=$RELEASE || { echo "Build Environment Fails" >&2 ; exit 1 ; }
+echo "$VERSION" > release.info
+cd ..
+mv ~/bin/getRelease ~/bin/oldRelease
+mv build/scripts/getRelease ~/bin/
+rm -rf build/scripts
+echo "Bind $MOUNTDIR to oldpas AND build to $MOUNTDIR"
+bindfs -o no-allow-other $MOUNTDIR oldpas
+bindfs -o nonempty,no-allow-other build $MOUNTDIR
+echo "Copy build code to final directory"
+rsync -axAHX --delete $MOUNTDIR/ oldpas/
+cd $MOUNTDIR
+echo "Stop PM2 Processes"
+pm2 stop pas.json
+pm2 delete pas.json
+cd ..
+fusermount3 -u $MOUNTDIR
+fusermount3 -u oldpas
+cd $MOUNTDIR
+echo "Start PM2 Process"
+pm2 start pas.json
+pm2 save
+cd ..
+rm -rf build/..?* build/.[!.]* build/*
+rm ~/bin/oldRelease
+echo "Complete"
+
+
+
