@@ -17,7 +17,7 @@
 \author{Alan Chandler}
 \title{Project Manual}
 \project{PI Audio Recorder}
-\date{23 February 2020}
+\date{26 March 2022}
 \usepackage{listings}
 \lstdefinestyle{bstyle}{
   belowcaptionskip=1\baselineskip,
@@ -37,28 +37,28 @@
 \begin{document}
 \maketitle
 \abstract{%
-This is a project to create a portable audio recorder.  It consists of a Raspberry PI 4 running a basic server system and a nodejs application which 
-provides a web interface to control recording and to spawn the ffmpeg application to record the audio, but also generate a video stream of the volume
-on the incoming audio. Recorded audio files will be recoverable via sftp for offline post processing. 
+This is a project to create a portable audio recorder.  It consists of a Raspberry PI 4 running a an nginx web server and a nodejs api server which 
+provides a web interface to control recording and to spawn the ffmpeg application to record the audio, but also a data stream of the loudness
+of the audio signal which is used by the client display a real time loudness graph. 
 }
 \tableofcontents
 \section{Introduction}
 
+This is a project to provide an audio recorder supporting the Scarlett 2 Microphone Hub and the Blue Yetti USB microphone to record the audio
+signal as high quality audio. These files may later be retrieved to be used in input to other mulitmedia programs.
+
+The core of the software runs on a raspberry pi and this makes it a portable solution which can be taken anywhere.
+
 \section{The Hardware}
 
-The hardware needed for the PASv5 Server is fairly minimal and is given in the list below:-
+The hardware needed for the Recorder Server is :-
 
 \begin{itemize}
-\item Raspberry Pi 2 Model B - Or Pi 3
-\item FLIRC Raspberry Pi B+ Case (recommended for its thermal properties, although any case will work)
-\item Raspberry Pi Universal Power Supply (5v, 2A, microUSB)
-\item 16GB Micro SD (SanDisk class @10 recommended)
-\item Ethernet cable to connect to the internal lan
-\item (Optional) 64B USB stick for backups.
+\item Raspberry Pi 4
+\item FLIRC Raspberry Pi Case (recommended for its thermal properties, although any case will work)
+\item Raspberry Pi Universal Power Supply (5v, 2A, USBc)
+\item 64GB Micro SD (SanDisk class @10 recommended) mainly for recording storage, so any size above 8G is satisfactory if you are happy to restrict recording space.
 \end{itemize}
-
-One version of this is needed for the main server, it is recommeded to get a second copy (excluding
-the optional usb stick) to act as an immediate replacement in the event of failure.
 
 \subsection{Putting an Operating System and other Software on the Hardware}
 
@@ -69,43 +69,48 @@ running system.
 
 You start with a blank card and add information to it.
 
-In essence there are two ways to create the SD card
+In essence there are two ways to create the SD card.
+
 \begin{enumerate}
 \item From scratch, creating the partitions, installing an operating system image that has been
 downloaded from the internet, and then installing all the software that is required.  This
-\emph{will} require another machine.  Dependant on the peripherals (SD Card Reader or not) on the
-`preparation' machine a USB to SD card converter  \emph{might} might be needed.
-\item Copying a backup image taken previously on to the new SD Card.  Assuming this process is done
-on the live system a USB SD card converter \emph{will} be required.
+\emph{will} require another machine, although the raspberry pi organisations provide imaging software to run on a variety of hardware.
+Later stages of the process could be conducted on the raspberry pi, although it will require an additional sd card, so if you have access
+to other linux systems it is recommended to use those.
+\item Using a skeleton SD Card image, made from the image created in the first option, and then loading up backups that have been made
+from the running system
 \end{enumerate}
 
-These two options are described in the subsections below.
+These two options are described in the main section below.
 
-\section{Creating an SD Card}
-\subsection{Creating an Original SD Card Operating System Image}
-\subsubsection{Getting The Initial Skeleton Sysem onto the SD card}
-Working on the `preparation' machine, download a working image of the Rasbian (Linux, Debian) System.  At the time of writing
-this is a version called `Buster' and is downloadable from
-\url{https://www.raspberrypi.org/downloads/raspbian/}.
+\section{Creating an SD Card from Scratch}
+\subsection{Getting The Initial System set up on an SD card}
+Working on the `preparation' machine, download a working image of the 64bit Raspberry PI OS (Linux, Debian) System.  At the time of writing
+this is a version called `Bulleseye' and is downloadable from
+\url{https://www.raspberrypi.com/software/operating-systems/#raspberry-pi-os-64-bit}
 
-This page shows various downloads, but the `Raspian Buster Lite' package is the one required. This starts
-with a minimal number of packages installed (more can be added later). Chose the zip file version,
-which if you click on the link will load
-\href{https://downloads.raspberrypi.org/raspbian_lite_latest} {The latest Zip File Version}.
+This page shows various downloads, but the `Raspberry Pi OS Lite' package is the one required. This starts
+with a minimal number of packages installed (more can be added later). Choose the zip file version,
+which if you click on the link will load.
 
 When this zip file has finished downloading extract the contents (an `.img' file).
-To install this image on the card we need to follow the instructions given here:-
+To install this image on the card we can download and install the Raspberry PI Imager on the computer that you have available.
 
-\begin{lstlisting}
-sudo dd status=progress bs=4M if=imagefilename.img of=/dev/sdX  #X = whatever the device holding the sd card is
-\end{lstlisting}
+If you do not have a separate linux environment to use, you can use the raspberry pi image we just made to act as you linux environemnt
+for the rest of the steps - but you will been a separate sd card and usb adaptor to build the final image following the instructions below.
 
-This will create an SD card with two partitions filling up about 1.4GB of the 16GB on the card.
+
+
+If you have a linux environment available follow the instructions given here:- 
+
+This will create an SD card with two partitions filling up about 1.4GB of the space on the card.
 Before the this card can be put in the Raspberry Pi space needs to be allocated for one more
 partition.  The easiest way to do that is with  \texttt{fdisk}.  Ultimately the second partition is
 going to take the remainder of the SD card minus a 1GB partition at the end used to hold the swap
-file\footnote{We are going to be using the `btrfs' filesystem that will not work with swap. It is
-therefore necessary to create an swap partition}.  It is necessary to
+file\footnote{We are going to be using the `btrfs' filesystem that will not work with file based swap system in the 
+stardard image. It is therefore necessary to create an swap partition. This may be a controversial decision as it causes
+some diffulty maintaining the initramfs that then becomes necessary when upgrading the kernel.  However, the ability it gives to
+make backups so much easier, and the fact that it treats the sdcard better for areas that keep }.  It is necessary to
 take the scary step of deleting the second partition and then recreating it at exactly the same
 start location, but with the end location 1GB (we try to stay on 4M boundaries in order to line files up
 with the erase boundaries of the sd card) from the end of the card. Provided we do recreate this
@@ -116,8 +121,9 @@ Follow the following steps:-
 \item With the card still in the /dev/sdX as above, run \texttt{fdisk /dev/sdX}.
 \item Press `p' to print the partition list and note down the starting sector of partition 2.  The
 list should also give sector number for the last sector on the card. Subtract 2097152\footnote{1GB
-in 512B sectors} from it and round this down so it exactly divisible by 8192. This as the start sector
-for partition 3.
+in 512B sectors - the 'bc' program is good for this calculation.} from it and round this down so it exactly 
+divisible by 8192. This as the start sector
+for partition 3. Partition 2 should end one before this.
 \item Press `d' to delete this partition.
 \item Press `n' to recreate this partition.  Make it a primary partiion and use the starting sector
 noted in step 2 above and the end sector as the value also noted in Step 2 minus 1. Don't remove the
@@ -146,9 +152,7 @@ raspi-config}:-
 
 \begin{itemize}
 \item Update \texttt{raspi-config} to the latest version (Advanced Options/Update)
-\item Change the password of the ``pi'' account. I have used the main
-``Administrative Logon'' password given in document ``Passwords for the SQL Server Implementation of
-PAS'' written by me in April 2012 and lodged with Accuvision at the time.
+\item Change the password of the ``pi'' account. I recommend something private to your developments.
 \item Set boot options to Console, requiring user to log in.
 \item Ensure the international settings are for English(British).
 \item Disable all interface options except SSH server, which should be enabled.
