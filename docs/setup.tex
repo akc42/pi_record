@@ -103,6 +103,10 @@ for the rest of the steps - but you will been a separate sd card and usb adaptor
 
 If you have a linux environment available follow the instructions given here:- 
 
+\begin{lstlisting}
+  sudo dd status=progress bs=4M if=imagefilename.img of=/dev/sdX  #X whatever the device holding the sdcard is
+\end{lstlisting}
+
 This will create an SD card with two partitions filling up about 1.4GB of the space on the card.
 Before the this card can be put in the Raspberry Pi space needs to be allocated for one more
 partition.  The easiest way to do that is with  \texttt{fdisk}.  Ultimately the second partition is
@@ -123,7 +127,7 @@ Follow the following steps:-
 list should also give sector number for the last sector on the card. Subtract 2097152\footnote{1GB
 in 512B sectors - the 'bc' program is good for this calculation.} from it and round this down so it exactly 
 divisible by 8192. This as the start sector
-for partition 3. Partition 2 should end one before this.
+for partition 3. Partition 2 should end one sector before this.
 \item Press `d' to delete this partition.
 \item Press `n' to recreate this partition.  Make it a primary partiion and use the starting sector
 noted in step 2 above and the end sector as the value also noted in Step 2 minus 1. Don't remove the
@@ -156,7 +160,7 @@ raspi-config}:-
 \item Set boot options to Console, requiring user to log in.
 \item Ensure the international settings are for English(British).
 \item Disable all interface options except SSH server, which should be enabled.
-\item Give the unit a hostname of ``pas'' (Advanced Options/Hostname).
+\item Give the unit a hostname of ``recorder'' (Advanced Options/Hostname).
 \item Set the required GPU memory to 16  (Advanced Options/Memory Split)
 \end{itemize}
 
@@ -221,13 +225,13 @@ The first step is to install the btrfs and initramfs tools that we need. It is a
 install vim, the text editor that we will use and rsync.
 
 \begin{lstlisting}
-  sudo apt install vim btrfs-tools initramfs-tools
+  sudo apt install vim btrfs-progs initramfs-tools
 \end{lstlisting}
 
 Edit \texttt{/etc/initramfs-tools/modules} to add btrfs as the last line. Then use
 
 \begin{lstlisting}
-sudo mkinitramfs -o /boot/initramfs7.img $(uname -r)
+sudo mkinitramfs -o /boot/initramfs8 $(uname -r)
 \end{lstlisting}
 
 To create an initramfs that can be used to start up with btrfs
@@ -235,41 +239,34 @@ To create an initramfs that can be used to start up with btrfs
 Edit \texttt{/boot/config.txt} file to have the following line at the top
 
 \begin{lstlisting}
-initramfs initramfs7.img followkernel
+initramfs initramfs8 followkernel
 \end{lstlisting}
 
-Edit \texttt{/boot/cmdline.txt} to add the the following two elements \texttt{rootfstype=btrfs} and
-\texttt{rootflags=subvol=\_root}
-
-It is also important that whenever the kernel is upgraded we recreate our \texttt{initramfs7.img}
-file for the newer kernel.
-
-Create a new file \texttt{/etc/kernel/postinst.d/initramfs-rebuild} with the following contents and
-then make it executable.
+Edit \texttt{/boot/cmdline.txt} so that it looks like the line below:-
 
 \begin{lstlisting}
-  #!/bin/sh -e
-
-  # Rebuild initramfs{7,7l,8).img after kernel upgrade to include new kernel's modules.
-  # Exit if rebuild cannot be performed
-  [ -x /usr/sbin/mkinitramfs ] || exit 0
-
-  # Exit if not building kernel for this Raspberry Pi's hardware version (assume armv7).
-  version="$1"
-  case "${version}" in
-    *-v7+) arch=7 ;;
-    *-v7l+) arch=7l ;;
-    *-v8+) arch=8 ;;
-    *) exit 0
-  esac
-  # Exit if rebuild not needed.
-  [ -f /boot/initramfs$arch.img ] && lsinitramfs /boot/initramfs$arch.img | grep -q "/$version$" && exit 0  # Already in initramfs.
-
-  # Rebuild.
-  mkinitramfs -o /boot/initramfs$arch.img "$version"
+  console=tty1 root=LABEL=rootfs rootfstype=btrfs rootflags=subvol=_root fsck.repair=no rootwait
 \end{lstlisting}
 
-Make the file executable.
+It is also important that whenever the kernel is upgraded we recreate our \texttt{initramfs8}
+file for the newer kernel.
+
+Edit the existing \texttt{/etc/kernel/postinst.d/initramfs-tools} with the
+following contents appended to the end.
+
+\begin{lstlisting}
+  # Add support for moving the new initrd image to the correct place
+  case "${version}" in
+    *-v8+)  ;;
+    *) exit 0
+  esac
+  mv /boot/initrd.img-${version} /boot/initramfs8
+\end{lstlisting}
+
+Finally edit file \textt{/etc/default/raspberrypi-kernel} to uncomment the line
+that starts \textt{#INITRD=Yes}
+
+
 
 Shutdown the system and remove the SD card.
 \subsubsection{Backup existing ext4 filesystem and replace with new btrfs filesysem}
@@ -290,6 +287,7 @@ cd ~
 mkdir rootfs-backup
 rsync -axAHX /mnt/ rootfs-backup/  #backup root
 umount /dev/sdX2
+
 wipefs -a /dev/sdX2
 mkfs -t btrfs -L rootfs /dev/sdX2
 mount -o subvol=/ /dev/sdX2 /mnt
@@ -297,7 +295,8 @@ btrfs subvolume create /mnt/_root
 btrfs subvolume create /mnt/_log
 btrfs quota enable /mnt/_log              #so we can apply a quota to it
 btrfs qgroup limit 2g /mnt/_log           #of 2 Gigs
-btrfs subvolume create /mnt/_pas          #to be used when we come to set up pas user
+btrfs subvolume create /mnt/_pm2logs      #to be used when we come to set up pm2
+btrfs subvolume create /mnt/_recordings   #we will store recordings in a separate subvolume
 rsync -axAHX rootfs-backup/ /mnt/_root/   #restore filesystem
 mv /mnt/_root/var/log/*  /mnt/_log/       #separate logs
 mkdir -p /mnt/_root/mnt/btrfs_pool        #create a place to mount the whole btrfs filesystem
@@ -316,26 +315,21 @@ LABEL=rootfs    /var/log	btrfs defaults,noatime,ssd,subvol=_log  0    0
 LABEL=swap      none      swap  sw                                0    0
 \end{lstlisting}
 
-Remove the SD card and place in back in the Raspberry Pi and boot it.  If this has worked and you can ssh into the pi
-account, you can also safely delete the rootfs-backup directory created earlier
+We will set up the other subvolumes later when we have added the directories and
+applications that use them
 
+Umount and remove the SD card and place in back in the Raspberry Pi and boot it.  If this has worked and you can ssh into the pi
+account, you can also safely delete the rootfs-backup directory created earlier.
 
-\subsection{Adjusting the system so it ready for PAS}
+\section{Adjusting the system so it ready for the recorder application}
 
 \subsubsection{Set up SSH Keys to avoid having to enter a password on each connection}
 
 It is desirable to be able to connect as the ``pi'' user to perform system maintenance tasks without having
 to enter a password every time.  This can be done securely by providing the public keys of users
-allowed to connect and perform this function. At the time of writing this document these are:-
-
-\begin{itemize}
-\item Alan from his home machine
-\item Alan from the Windows 10 Virtual Machine, enabling access to the clinic over an encrypted network.
-\item Alan from the machine in the Clinic
-\end{itemize}
-
-Each of these accounts are configured already with private keys to connect, so the public keys need to be copied
-across and installed in an \texttt{authorized\_keys} file.
+allowed to connect and perform this function - assuming the accounts already
+have private keys set up. The public keys need to be copied to the new pi
+account and installed in an \texttt{authorized\_keys} file.
 
 Firstly whilst in the ``pi'' account perform the following commands:-
 
@@ -344,23 +338,35 @@ mkdir .ssh
 chmod 700 .ssh
 \end{lstlisting}
 
-Then back on the machine where all the keys are stored \footnote{The `pas' without any extension is the private key for this box and can be used to connect from this box to elsewhere. This will be used, for instance to connect to a master copy of the PASv5 repository and pull in the latest versions.}
+Then back on the machine where all the keys are stored \footnote{The `recorder'
+without any extension is the private key for this box and can be used to connect
+from this box to elsewhere. This will be used, for instance to connect to a
+backup machine and set backups there.}
 
 \begin{lstlisting}
-scp kanga.pub roo.pub accwrk7.pub pas pi@pas:.ssh/
+scp xxx.pub recorderexx pi@recorder:.ssh/
 \end{lstlisting}
 
-Then ssh back to pi@pas
+Then ssh back to pi@recorder
 
 \begin{lstlisting}
 cd .ssh
-mv pas id_rsa  #set up the private key for this unit
-cat kanga.pub roo.pub accwrk7.pub > authorized_keys
+mv recorder id_ed25519  #set up the private key for this unit
+cat *.pub > authorized_keys #set up all the public keys
 \end{lstlisting}
 
 It should now be possible to connect directly to pi@pas without entering a password\footnote{This
 assumes that the private keys corresponding the the copied public keys are without pass phrases.
 This is generally the case with the keys used just because of the convenience.}.
+
+Finally set up so that the root account can ssh to other machines:-
+
+\begin{lstlisting}
+  sudo -i  #takes into the /root directory
+  mkdir .ssh
+  chmod 700 .ssh
+  cp ~pi/.ssh/id_ed25519 .ssh/
+\end{lstlisting}
 
 \subsubsection{Add additional software needed to run the system}
 
@@ -372,127 +378,67 @@ sudo apt-get upgrade
 sudo reboot
 \end{lstlisting}
 
-In the clinic, the default domain being used is `accuvision.local'.  Because this clashes with the
-default local domain (`.local') it can cause some strange results when looking up addresses. To
-solve this we need to edit the \texttt{/etc/nsswitch.conf} file and change the `hosts` line to
-the following:-
+
+Then install the additional software required.
 
 \begin{lstlisting}
-hosts:          files dns mdns4_minimal [NOTFOUND=return]
+  sudo apt-get install git htop wget nginx rsync tar anacron ffmpeg
 \end{lstlisting}
 
-Then install the additional software required
+So far, apart from creating the specific host name and using it, and creating
+the btrfs subvolume _recordings the entire process has been generic for any
+raspberrypi 4.  This is a good time therefore to consider snapshotting the
+process in some way to prevent having to go through the entire process again.
+This is described in the next section 
 
-\begin{lstlisting}
-  sudo apt-get install git htop wget postfix
-  \end{lstlisting}
 
-The only one of these that needs any configuration is postfix, and the following files
-should be set up as follows:-
+\section{Creating and using an pre-prepared image} 
+\subsection{An overview of what we aiming to achieve}
 
-\texttt{/etc/postfix/main.cf}
-\begin{lstlisting}
-  # See http://www.postfix.org/COMPATIBILITY_README.html -- default to 2 on
-  # fresh installs.
-  compatibility_level = 2
+We want to store a minimal SD card image and related compressed filesystems such
+that with very little effort we can turn the combined whole into a working
+environment. However we want to go further than that - in that as we update the
+operating system we capture those changes, and they can easily been incorporated
+into a newly created SD Card.  In otherwords, in the event of a catastrophic
+failure of an existing SD Card, we can recreate the operational system (minus
+perhaps some of the history logs and or operational data) vary rapidly.
 
-  smtpd_banner = $myhostname ESMTP $mail_name (Raspbian)
-  biff = no
-  # appending .domain is the MUA's job.
-  append_dot_mydomain = no
+To that end we have considered the structure to date as follows: -
 
-  delay_warning_time = 4h
-  confirm_delay_cleared = yes
-  notify_classes = delay
-  readme_directory = no
+\begin{itemize}
+  \item The root filesystem sits on a single btrfs subvolume, minus the second
+  by second data (ie \texttt{/var/log/*} files and the \texttt{pm2}
+  logs\footnote(We have yet to install pm2, but its log files will be the output
+  from our application we might want for diagostic purposes.  We have already
+  prepared but not used a btrfs subvolume for them to reside on))
+  \item the /boot file hierachy is also a separate filesytem that we can take a
+  regular backup of.
+  \item a minimal sdcard image comprising only the boot partition and a highly
+  truncated second partition.  This second partition will NOT hold any files -
+  but instead we will be minimal in size.  When we come to recreate the sdcard,
+  we will copy that image file to an SD card and then used the same trick that
+  we used when originally creating the card to expand it to the full size with a
+  swap partition at the end of the card.  
+\end{itemize}
 
-  # TLS parameters
-  smtpd_tls_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem
-  smtpd_tls_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
-  smtpd_use_tls=yes
-  smtpd_tls_session_cache_database = btree:${data_directory}/smtpd_scache
-  smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
+\subsection{Backing up the latest version of the filesystems}
 
-  smtp_use_tls = yes
-  smtp_sasl_auth_enable = yes
-  smtp_sasl_password_maps = hash:/etc/postfix/relay_password
-  smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
-  smtp_sasl_security_options =
-  smtp_tls_security_level = may
+\subsection{Creating the SD Card Image}
 
-  smtpd_relay_restrictions = permit_mynetworks permit_sasl_authenticated defer_unauth_destination
-  myhostname = pas.accuvision.local
-  alias_maps = hash:/etc/aliases
-  alias_database = hash:/etc/aliases
-  myorigin = /etc/mailname
 
-  relayhost = [mail.accuvision.co.uk]
-  mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
-  mailbox_size_limit = 0
-  recipient_delimiter = +
-  inet_interfaces = loopback-only
-  inet_protocols = all
 
-  #There are no local domains - everything must go somewhere else, the virtual maps define it
-  local_transport = error: User unknown
-  local_recipient_maps =
-  mydestination =
 
-  #virtual alias domains, we are the mail server for the domain, but everything gets forwarded
-  virtual_alias_domains =
-    $myhostname
 
-  virtual_alias_maps = hash:/etc/postfix/virtual
-\end{lstlisting}
 
-\texttt{/etc/postfix/virtual}
 
-\begin{lstlisting}
-  #Local transport will specify virtual, so these entries reroute
-  mailer-daemon alan.chandler+pas@hartley-consultants.com
-  postmaster  alan.chandler+pas@hartley-consultants.com
-  webmaster  alan.chandler+pas@hartley-consultants.com
-  abuse  alan.chandler+pas@hartley-consultants.com
-  root alan.chandler+pas@hartley-consultants.com
-  pas alan.chandler+pas@hartley-consultants.com
-  pi alan.chandler+pas@hartley-consultants.com
 
-\end{lstlisting}
 
-\texttt{/etc/postfix/relay\_password}
 
-\begin{lstlisting}
-  mail.accuvision.co.uk info@accuvision.co.uk:EyECare555
-\end{lstlisting}
 
-It is also necessary to run a few commands
-\begin{lstlisting}
-  sudo hostname pas.accuvision.local
-  sudo postmap /etc/postfix/virtual
-  sudo postmap /etc/postfix/relay_password
-\end{lstlisting}
 
-\subsubsection{Create the pas user}
+\subsubsection{Create the recorder user}
 
-We are going to have a user ``pas'' who will own and run the pas system.  However, we want to give this
-user their own btrfs subvolume because it will be easier to back this up and restore it.  However in order to get the permissions
-set up correctly we have create the user first and then move all the file so a new subvolume
-\begin{lstlisting}
-  sudo -s   #become root
-  adduser pas
-  mount -o subvol=_pas /dev/mmcblk0p2 /mnt
-  mv /home/pas/* /mnt/
-  mv /home/pas/.* /mnt/
-  umount /mnt
-  mount -o subvol=_pas /dev/mmcblk0p2 /home/pas
-  vim /etc/fstab     #add the line below into the exsting file
-\end{lstlisting}
-
-The following should be added to /etc/fstab
-\begin{lstlisting}
-  LABEL=rootfs  /home/pas	      btrfs   defaults,noatime,ssd,subvol=_pas   0       0
-\end{lstlisting}
-
+We are going to have a user ``recorder'' who will own and run the recorder application.  
 \subsubsection{Set up backup processes}
 
 We want to create some cron jobs that help maintain the system.  The first of these will be a
