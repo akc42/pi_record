@@ -1,5 +1,6 @@
 
 client/lit
+client/service-worker.js
 docs/**/*.aux
 docs/**/*.fdb_latexmk
 docs/**/*.fls

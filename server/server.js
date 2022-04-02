@@ -33,14 +33,18 @@
   const debugstatus = require('debug')('recorder:status');
   const Router = require('router');
   const enableDestroy = require('server-destroy');
-  const usb = require('usb');
+  const {usb, findByIds} = require('usb');
   const Recorder = require('./recorder');
-  const util = require('util');
-  const url = require('url');
-  const querystring = require('querystring');
+
   const logger = require('./logger');
-  const child = require('child_process');
+
   const root = path.resolve(__dirname,'../');
+
+
+  const update = require('./update');
+  const serviceWorkerBase = path.resolve(__dirname, 'service-worker.js');
+  const serviceWorker = path.resolve(__dirname, '../client/service-worker.js');
+
 
 // see https://stackoverflow.com/a/52171480/438737
   const cyrb53 = function(str, seed = 0) {
@@ -55,66 +59,49 @@
     return 4294967296 * (2097151 & h2) + (h1>>>0);
   };
 
-  const version = new Promise(resolve => {
-    /*
-      we use the following file to workout the copyright year. As the system becomes more stable
-      this becomes harder to chose one that closely represents the latest changes. The obvious
-      choice is the .env file, as that is normally built during the release of a new version
-    */
-
-    child.exec('git describe --abbrev=0 --tags',{cwd: root}, (err,stdout,stderr) => {
-      let version;
-      if (stderr) {
-        logger('error', 'git describe failed reading verion number with ' + err.message);
-        if (process.env.REC_VERSION) {
-          version = process.env.REC_VERSION;
-        } else {
-          version = ':v0.0.0';
-        }
-      } else {
-        version = stdout.trim();
+  const version = new Promise(async resolve => {
+    //no release info file, so use package.json
+    let version;
+    let vtime;
+    try {
+      const pjsonfile = path.resolve(__dirname,'..', 'package.json');
+      const pjson = require(pjsonfile);
+      version = 'v' + pjson.version;
+      try {
+        const { mtime } = await fs.stat(pjsonfile);
+        vtime = mtime;
+      } catch (e) {
+        vtime = new Date();
       }
-      resolve(version);
-    });
+    } catch (e) {
+      version = 'v1.0.0';
+      vtime = new Date();
+    } finally {
+      const finalversion = version.replace(/\s+/g, ' ').trim(); //trim out new lines and multiple spaces just one.
+      const copyrightTime = new Date(vtime);
+      resolve({version: finalversion, year: copyrightTime.getUTCFullYear()});
+    }
+  
+    
   });
 
-  const setTimeoutPromise = util.promisify(setTimeout);
 
+  const setTimeoutPromise = (time) => new Promise(accept => setTimeout(accept,time));
 
-  const mimes = {
-    '.crt':'application/x-x509-ca-cert',
-    '.css': 'text/css',
-    '.doc': 'application/msword',
-    '.html': 'text/html',
-    '.ico': 'image/x-icon',
-    '.jpg': 'image/jpeg',
-    '.js': 'text/javascript',
-    '.json': 'application/json',
-    '.mjs': 'text/javascript',
-    '.mp3': 'audio/mpeg',
-    '.m3u8': 'application/vnd.apple.mpegurl',
-    '.pdf': 'application/pdf',
-    '.pem':'application/x-x509-ca-cert',
-    '.png': 'image/png',
-    '.svg': 'image/svg+xml',
-    '.ts': 'video/mp2t',
-    '.wav': 'audio/wav'
-
-  };
   let server;
   const recorders = {};
   let statusid = 0;
   const subscribedChannels = {};
   let statusTimer = 0;
 
-  async function startUp (http, Router,enableDestroy, logger, Recorder, usb) {
+  async function startUp (http, Router,enableDestroy, logger, Recorder, usb, findByIds) {
     try {
       const routerOpts = {mergeParams: true};
       const router = Router(routerOpts);  //create a router
           
-      debug('have server ssl keys about to create the http2 server')
+      debug('about to create the http server')
       server = http.createServer((req,res) => {
-        const reqURL = url.parse(req.url).pathname;
+        const reqURL = new URL(req.url, `http://${req.headers.host}`).pathname;
         debugfile('request for ', reqURL, ' received');
 
         function final(err) {
@@ -132,6 +119,14 @@
       });
       server.listen(parseInt(process.env.RECORDER_PORT,10),'0.0.0.0');
       enableDestroy(server);
+      fs.copyFile(serviceWorkerBase, serviceWorker).then(() =>
+        version.then(info =>
+          update(serviceWorker, 'version = ', `'${info.version}';`).then(() => {
+            logger('app', `Release ${info.version} of Recorder API Server Operational on Port:${process.env.RECORDER_PORT} using node ${process.version}`);
+            if (process.send) process.send('ready'); //if started by (e.g.) PM2 then tell it you are ready
+          })
+        )
+      );
       router.get('/api/:client/done',async (req,res) => {
         debug('done request received');
         const client = req.params.client;
@@ -228,9 +223,10 @@
             sendStatus('newid', {
               client: client, 
               renew: parseInt(process.env.RECORDER_RENEW_TIME,10),
-              log: process.env.RECORDER_NO_REMOTE_LOG === undefined,
-              warn: process.env.RECORDER_NO_REMOTE_WARN === undefined,
-              version: version
+              log: typeof process.env.RECORDER_NO_REMOTE_LOG === 'undefined',
+              warn: typeof process.env.RECORDER_NO_REMOTE_WARN === 'undefined',
+              version: version.version,
+              year: version.year
             }, response);
             const status = {
               scarlett: recorders.scarlett !== undefined? recorders.scarlett.status : {connected: false},
@@ -304,23 +300,25 @@
         }
       });
       router.get('/api/:client/log',(req,res) => {
-        const objUrl = url.parse(req.url)
-        if (process.env.RECORDER_NO_REMOTE_LOG === undefined) logger('log', querystring.unescape(objUrl.query), req.params.client);
+        const objUrl = new URL(req.url, `http://${req.headers.host}`);
+        if (typeof process.env.RECORDER_NO_REMOTE_LOG === 'undefined') 
+          logger('log', decodeURI(objUrl.search).substring(1), req.headers['x-forwarded-for']);
         res.end();
       });
       router.get('/api/:client/warn',(req,res) => {
-        const objUrl = url.parse(req.url)
-        if (process.env.RECORDER_NO_REMOTE_WARN === undefined) logger('err', querystring.unescape(objUrl.query), req.params.client);
+        const objUrl = new URL(req.url, `http://${req.headers.host}`);
+        if (typeof process.env.RECORDER_NO_REMOTE_WARN === 'undefined') 
+          logger('err', decodeURI(objUrl.search).substring(1), req.headers['x-forwarded-for']);
         res.end();
       });
 
       usb.on('attach', usbAttach);
       usb.on('detach', usbDetach);
  
-      if (usb.findByIds(parseInt(process.env.RECORDER_SCARLETT_VID,10), parseInt(process.env.RECORDER_SCARLETT_PID,10)) !== undefined) {
+      if (findByIds(parseInt(process.env.RECORDER_SCARLETT_VID,10), parseInt(process.env.RECORDER_SCARLETT_PID,10)) !== undefined) {
         recorders.scarlett = new Recorder(process.env.RECORDER_SCARLETT_HW, process.env.RECORDER_SCARLETT_FORMAT, process.env.RECORDER_SCARLETT_NAME);
       }
-      if (usb.findByIds(parseInt(process.env.RECORDER_YETI_VID,10), parseInt(process.env.RECORDER_YETI_PID,10)) !== undefined) {
+      if (findByIds(parseInt(process.env.RECORDER_YETI_VID,10), parseInt(process.env.RECORDER_YETI_PID,10)) !== undefined) {
         recorders.yeti = new Recorder(process.env.RECORDER_YETI_HW, process.env.RECORDER_YETI_FORMAT, process.env.RECORDER_YETI_NAME);
       }
 
@@ -336,9 +334,6 @@
         };
         sendStatus('status', status);
       }, 90000);
-
-      logger('app', 'Recorder Web Server Operational Running on Port:' +
-          process.env.RECORDER_PORT + ' with Node Version: ' + process.version);
     } catch(err) {
       logger('error', `Error occurred in startup; error ${err}`);
       close();
@@ -414,8 +409,8 @@
   // My process has received a SIGINT signal
 
     if (server) {
-      logger('app', 'Starting Server ShutDown Sequence');
       try {
+        await logger('app', 'Starting Server ShutDown Sequence');
         const tmp = server;
         server = null;
         if (statusTimer !== 0) clearInterval(statusTimer);
@@ -443,7 +438,7 @@
         await new Promise(resolve => setTimeout(() => resolve(),500));
         debug('About to close Web Server');
         tmp.destroy();
-        logger('app', 'Recorder Server ShutDown');
+        await logger('app', 'Recorder Server ShutDown');
       } catch (err) {
         logger('error', `Trying to close caused error:${err}`);
       }
@@ -453,7 +448,7 @@
   if (!module.parent) {
     //running as a script, so call startUp
     debug('Startup as main script');
-    startUp(http, Router, enableDestroy, logger, Recorder, usb);
+    startUp(http, Router, enableDestroy, logger, Recorder, usb, findByIds);
     process.on('SIGINT', () => close(usb));
   }
   module.exports = {

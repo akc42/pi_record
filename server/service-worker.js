@@ -90,4 +90,4 @@ self.addEventListener('fetch', (event) => {
   }
 });
 //line below updated when server starts and this file is copied into position
-version = 'v3.1.0';
+version = 'recorder-v3';
