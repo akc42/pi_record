@@ -1,0 +1,12 @@
+#!/bin/bash
+
+rsync -axAHX --delete client/ recorder@recorder:recorder/client/
+rsync package.json package-lock.json nginx.conf recorder.json rollup.config.js recorder@recorder:recorder/
+ssh recorder@recorder -t "bash -i -c 'cd recorder; npm ci --production'"
+ssh pi@recorder "sudo systemctl reload nginx"
+#This should cause pm2 to notice changes and restart the server
+rsync -axAHX --delete server/ recorder@recorder:recorder/server/
+echo "Complete"
+
+
+
