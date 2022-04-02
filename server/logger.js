@@ -18,28 +18,34 @@
 (function() {
   'use strict';
 
-  const chalk = require('chalk');
-  const COLOURS = {
+  const chalkPromise = import('chalk');
+  const coloursPromise = chalkPromise.then(CHALK => {
+    const {default: chalk} = CHALK;
+  return {
     app: chalk.magenta,
-    api: chalk.green,
+    client: chalk.green,
     error: chalk.white.bgRed,
     url: chalk.white.bgMagenta,
     rec: chalk.cyan,
     log: chalk.yellowBright,
     err: chalk.redBright
-  };
+    }
+  });
 
-  function logger(level, message, client) {
+  async function logger(level, message, client) {
     let logLine = '';
-    if (process.env.REC_NOLOG === undefined) {
-      if (process.env.REC_LOGNODATE === undefined) logLine += new Date().toISOString() + ': ';
-      if (client) {
-        logLine += COLOURS['api'](client + ': ');
+    const c = client;
+    const m = message;
+    const l = level;
+    if (typeof process.env.REC_NOLOG === 'undefined' || level === 'error' || level === 'app') {
+      if (typeof process.env.REC_LOGNODATE === 'undefined') logLine += new Date().toISOString() + ': '; 
+      const COLOURS = await coloursPromise;
+      if (c) {
+        logLine += COLOURS['client'](c + ': ');
       }
-      logLine += COLOURS[level](message);
+      logLine += COLOURS[l](m);
       //eslint-disable-next-line no-console
       console.log(logLine.trim());
-
     }
   }
 

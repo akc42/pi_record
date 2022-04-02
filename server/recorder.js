@@ -76,7 +76,7 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
     }
     get controlled() {
       if (this._controlled.length === 0) {
-        debugctl(`in recorder ${this.mame} we have a zero length controlling token, so must fail`);
+        debugctl(`in recorder ${this.mame} we have a zero length controlling token, so must say not controlled`);
         return false;
       }
       let returnValue = true;
@@ -159,17 +159,20 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
     }
     _startVolume() {
       const args = volargs.replace('hw:dddd', 'hw:' + this._device).replace(/s32le/g,this._fmt).split(' ');
-      debug(`Recorder ${this._name} starting volume generation`);
+      debug(`Recorder ${this._name} starting volume generation with args ${args.join(' ')}`);
       this._volume = spawn('ffmpeg', args, {
         cwd: path.resolve(__dirname, '../'),
         stdio: ['pipe', 'ignore', 'pipe']
+      });
+      this._volume.on('error', (e) => {
+        console.log('volume error event',e);
       });
       this._volume.stderr.pipe(this._sed.stdin, {end: false});  //send the output throught the sed filter and out to listener 
       this._timerStart = Date.now();
       this._volumePromise = new Promise(resolve => this._volume.once('exit', (code, signal) => {
         debug('Recorder ', this._name, ' volume production ended');
         delete this._volume;
-        if (code !== 0 && code !== 255) logger('error', `recorder ${this._name} volume stream ended prematurely with code ${code}`);
+        if (code !== null && code !== 0 && code !== 255) logger('error', `recorder ${this._name} volume stream ended prematurely with code ${code}`);
         resolve(); 
       }));      
     }
