@@ -17,7 +17,7 @@
     You should have received a copy of the GNU General Public License
     along with Recorder.  If not, see <http://www.gnu.org/licenses/>.
 */
-import { LitElement, html } from '../lit/lit-element.js';
+import { LitElement, html } from '../lit/lit.js';
 import {classMap} from '../lit/class-map.js';
 import {styleMap} from '../lit/style-map.js'
 

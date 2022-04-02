@@ -21,7 +21,7 @@
 
 */
 
-import { LitElement, html } from '../lit/lit-element.js';
+import { LitElement, html } from '../lit/lit.js';
 
 const link = document.createElement('link');
 link.rel = 'stylesheet';

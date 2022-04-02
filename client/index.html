@@ -51,14 +51,41 @@
 
     <link rel="manifest" href="manifest.json">
 
-    <script src="./lit/webcomponents-loader.js"></script>
-
     <script type="module" src="./components/rec-app.js"></script>
     <script>
-      if('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
-      }
 
+        // Register the base URL
+        const baseUrl = document.querySelector('base').href;
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', async () => {
+            try {
+              navigator.serviceWorker.addEventListener('message', (event) => {
+                const encoded = encodeURIComponent(event.data ?? 'Unknown Message');
+                const subid = 'Service Worker';
+                fetch(`/api/${subid}/log?${encoded}`);
+              });
+              const registration = await navigator.serviceWorker.register(baseUrl + 'service-worker.js');
+              document.body.addEventListener('sw-update-check', () => {
+                registration.update();
+              });
+              let refreshing = false;
+              // detect controller change and refresh the page
+              navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!refreshing) {
+                  window.location.reload()
+                  refreshing = true
+                }
+              });
+            } catch (e) {
+              //log any problems
+              console.warn('service worker registration failed', e);
+              const encoded = encodeURIComponent(e.message ?? 'Unknown Error During Registration');
+              const subid = 'Service Worker';
+              fetch(`/api/${subid}/warn?${encoded}`);
+            }
+          });
+
+        }
 
     </script>
     <style>

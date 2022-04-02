@@ -9,6 +9,7 @@
       "kill_timeout": 15000,
       "watch" : ["server"],
       "watch_options": {"followSymlinks" : false},
+      "ignore_watch": ["node_modules"],
       "min_uptime"       : "30s",
       "max_restarts"     : 5,
       "merge_logs" : true,

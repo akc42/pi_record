@@ -20,7 +20,7 @@
 
 
 
-import { LitElement, html } from '../lit/lit-element.js';
+import { LitElement, html, css } from '../lit/lit.js';
 
 import Ticker from '../modules/ticker.js';
 
@@ -34,12 +34,95 @@ import './rec-reset-button.js';
 import label from '../styles/label.js';
 
 class RecApp extends LitElement {
-  static get styles() {
-    return [label];
-  }
+  static styles = [label, css`
+        #icon {
+          /* create a gradient to represent glowing blue light and then mask it with the logo image */
+          grid-area: logo;
+          -webkit-mask-image: url(/images/recorder-icon.svg);
+          -webkit-mask-position: 0 0;
+          -webkit-mask-size: contain;
+          -webkit-mask-repeat: no-repeat;
+          mask-image: url(/images/recorder-icon.svg);
+          mask-position: 0 0;
+          mask-size: contain;
+          mask-repeat: no-repeat; 
+          background: radial-gradient(#3F8CFF, #24E0FF );
+          height: 80px;
+          width:80px
+        }
+        #case {
+          border-radius: 20px;
+          padding: 20px;
+          background-color: #380c27;
+          background-image: url('/images/light-aluminium.png');
+          background-repeat: repeat;
+          height: 560px;
+          width: 730px;
+          display: grid;
+          grid-gap: 5px;
+          grid-template-areas:
+            "logo ver led volume"
+            "button reset reset volume"
+            "mode mic mic volume"
+            "lcd lcd lcd volume"
+            "lcd lcd lcd copy";
+          grid-template-columns: 4fr 1fr 3fr 5fr;
+          grid-template-rows: 1fr 2fr 2fr 3fr .5fr;
 
-  static get properties() {
-    return {
+        }
+        rec-led {
+          grid-area: led;
+        }
+
+        #version {
+
+          grid-area: ver;
+        }
+        rec-lcd {
+          grid-area: lcd;
+        }
+        rec-record-button {
+          grid-area: button;
+        }
+        rec-volume {
+          grid-area: volume;
+        }
+        rec-reset-button {
+          grid-area: reset;
+        }
+        #mode {
+          grid-area:mode;
+        }
+        #mic {
+          grid-area: mic;
+        }
+        #copy {
+          grid-area: copy;
+          font-size: 8pt;
+          color: white;
+          display: grid;
+          place-content: flex-end;
+        }
+        .feet {
+          padding: 0 50px;
+          display: flex;
+          align-items: stretch;
+          justify-content: space-between;
+
+        }
+        .foot {
+          height:30px;
+          width: 100px;
+          background-image: 
+            -webkit-repeating-linear-gradient(left, hsla(0,0%,100%,0) 0%, hsla(0,0%,100%,0)   6%, hsla(0,0%,100%, .1) 7.5%),
+            -webkit-repeating-linear-gradient(left, hsla(0,0%,  0%,0) 0%, hsla(0,0%,  0%,0)   4%, hsla(0,0%,  0%,.03) 4.5%),
+            -webkit-repeating-linear-gradient(left, hsla(0,0%,100%,0) 0%, hsla(0,0%,100%,0) 1.2%, hsla(0,0%,100%,.15) 2.2%),
+            linear-gradient(to right, #E5E5E5 , white 50%, #E5E5E5);
+
+        }    
+    `];
+
+  static properties = {
       mics: {type: Array},  //names of mics that we can select (Capitalised)
       mic : {type: String},  //name of mike selected (lower case)
       micname: {type: String}, //Full name of selected Mic (as received)
@@ -59,7 +142,6 @@ class RecApp extends LitElement {
       code: {type: String},      //Error Code if there is one
       taken: {type: Boolean}
     };
-  }
   constructor() {
     super();
     this.connected = false;
@@ -81,6 +163,7 @@ class RecApp extends LitElement {
     this.seconds = 0;
     this.taken = false; 
     this.timer = 0;
+    this.year = '2022';
     this.client = Date.now().toString(16); //Make a default ClientID for Logging before we get going.
     this.renew = 60; //start with a low number, so we are over zealous, be we will probably increase
     this.log = true, //start with an assumption we are going to log, server will stop us if it wants and wont log 
@@ -256,6 +339,7 @@ class RecApp extends LitElement {
           this.state = 'Closed';
           break;
         case 'Initialise':
+          document.body.dispatchEvent(new CustomEvent('sw-update-check'));
           this.state = 'Initialise'
           break;
         case 'Monitor': 
@@ -421,86 +505,6 @@ class RecApp extends LitElement {
   }
   render() {
     return html`
-      <style>
-        #icon {
-          /* create a gradient to represent glowing blue light and then mask it with the logo image */
-          grid-area: logo;
-          -webkit-mask-image: url(/images/recorder-icon.svg);
-          -webkit-mask-position: 0 0;
-          -webkit-mask-size: contain;
-          -webkit-mask-repeat: no-repeat;
-          mask-image: url(/images/recorder-icon.svg);
-          mask-position: 0 0;
-          mask-size: contain;
-          mask-repeat: no-repeat; 
-          background: radial-gradient(#3F8CFF, #24E0FF );
-          height: 80px;
-          width:80px
-        }
-        #case {
-          border-radius: 20px;
-          padding: 20px;
-          background-color: #380c27;
-          background-image: url('/images/light-aluminium.png');
-          background-repeat: repeat;
-          height: 560px;
-          width: 730px;
-          display: grid;
-          grid-gap: 5px;
-          grid-template-areas:
-            "logo ver led volume"
-            "button reset reset volume"
-            "mode mic mic volume"
-            "lcd lcd lcd volume";
-          grid-template-columns: 4fr 1fr 3fr 5fr;
-          grid-template-rows: 1fr 2fr 2fr 3fr;
-
-        }
-        rec-led {
-          grid-area: led;
-        }
-
-        #version {
-
-          grid-area: ver;
-        }
-        rec-lcd {
-          grid-area: lcd;
-        }
-        rec-record-button {
-          grid-area: button;
-        }
-        rec-volume {
-          grid-area: volume;
-        }
-        rec-reset-button {
-          grid-area: reset;
-        }
-        #mode {
-          grid-area:mode;
-        }
-        #mic {
-          grid-area: mic;
-        }
-        .feet {
-          padding: 0 50px;
-          display: flex;
-          align-items: stretch;
-          justify-content: space-between;
-
-        }
-        .foot {
-          height:30px;
-          width: 100px;
-          background-image: 
-            -webkit-repeating-linear-gradient(left, hsla(0,0%,100%,0) 0%, hsla(0,0%,100%,0)   6%, hsla(0,0%,100%, .1) 7.5%),
-            -webkit-repeating-linear-gradient(left, hsla(0,0%,  0%,0) 0%, hsla(0,0%,  0%,0)   4%, hsla(0,0%,  0%,.03) 4.5%),
-            -webkit-repeating-linear-gradient(left, hsla(0,0%,100%,0) 0%, hsla(0,0%,100%,0) 1.2%, hsla(0,0%,100%,.15) 2.2%),
-            linear-gradient(to right, #E5E5E5 , white 50%, #E5E5E5);
-
-        }
-
-      </style>
       <div id="case">
         <div id="icon"></div>
         <div id="version" label>${this.version}</div>
@@ -521,6 +525,7 @@ class RecApp extends LitElement {
           .code=${this.code}
         ></rec-lcd>
         <rec-volume id="volume" .channel=${this.connected ? this.mic:''} @loudness-change=${this._newLoudness}></rec-volume>
+        <div id="copy">&copy; 2020-${this.year} Alan Chandler</div>
       </div>
       <div class="feet">
         <div id="left" class="foot"></div>
@@ -589,12 +594,13 @@ class RecApp extends LitElement {
    };
   _eventNew(e) {
     try {
-      const {client,renew, warn, log, version} = JSON.parse(e.data);
+      const {client,renew, warn, log, version, year} = JSON.parse(e.data);
       this.client = client;
       this.renew = renew;
       this.log = log;
       this.warn = warn;
       this.version = version;
+      this.year = year;
       this._remoteLog(`EV - Setting client to ${client} renew to ${renew}`);
     } catch (err) {
       this._remoteWarn('Error in parsing Event New Id:', e);
@@ -1027,6 +1033,7 @@ class RecApp extends LitElement {
           }
         }
       }
+      document.body.dispatchEvent(new CustomEvent('sw-update-check'));// good time to see if there was any service worker update
       this.eventSrc.removeEventListener('add', this._eventAdd);
       this.eventSrc.removeEventListener('close', this._eventClose);
       this.eventSrc.removeEventListener('newid', this._eventNew);
