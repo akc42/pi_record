@@ -7,7 +7,7 @@
         "--color"
       ],
       "kill_timeout": 15000,
-      "watch" : ["server"],
+      "watch" : ["server/.env"],
       "watch_options": {"followSymlinks" : false},
       "ignore_watch": ["node_modules"],
       "min_uptime"       : "30s",
