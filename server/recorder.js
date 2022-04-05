@@ -164,9 +164,6 @@ const sedargs = ['-u', '-n','s/.*TARGET:-23 LUFS\\(.*\\)LUFS.*FTPK:\\([^d]*\\)*.
         cwd: path.resolve(__dirname, '../'),
         stdio: ['pipe', 'ignore', 'pipe']
       });
-      this._volume.on('error', (e) => {
-        console.log('volume error event',e);
-      });
       this._volume.stderr.pipe(this._sed.stdin, {end: false});  //send the output throught the sed filter and out to listener 
       this._timerStart = Date.now();
       this._volumePromise = new Promise(resolve => this._volume.once('exit', (code, signal) => {
