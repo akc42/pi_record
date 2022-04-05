@@ -438,7 +438,9 @@ To that end we have considered the structure to date as follows: -
 
 \subsubsection{Create the recorder user}
 
-We are going to have a user ``recorder'' who will own and run the recorder application.  
+We are going to have a user ``recorder'' who will own and run the recorder
+application. This user also has to be a member of the audio group.
+  
 \subsubsection{Set up backup processes}
 
 We want to create some cron jobs that help maintain the system.  The first of these will be a
@@ -524,21 +526,21 @@ Make sure all three files have excute priviledges
 
 \subsubsection{Prepare for setting up and running production system}
 
-We need to be able to easily connect via ssh to the pas user.  Set this up with
+We need to be able to easily connect via ssh to the recorder user.  Set this up with
 the following commands:-
 
 \begin{lstlisting}
 sudo -s
-cd /home/pas
+cd /home/recorder
 mkdir .ssh
 chown pas.pas .ssh
 chmod 700 .ssh
 cd .ssh
 cp /home/pi/.ssh/* .
-chown pas.pas *
+chown recorder.recorder *
 \end{lstlisting}
 
-Now connect as the ``pas'' user (\texttt{ssh pas@pas}), firstly to check that it works, but also
+Now connect as the ``recorder'' user (\texttt{ssh recorder@recirder}), firstly to check that it works, but also
 to perform the next few commands to setup ``nvm'' a node version manager and use it to install the latest
 (or a new) version of `node` along with some key `node' based command line tools.
 
