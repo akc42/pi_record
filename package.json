@@ -11,21 +11,24 @@
   "author": "Alan Chandler <alan@chandlerfamily.org.uk>",
   "license": "GPL",
   "dependencies": {
-    "@rollup/plugin-node-resolve": "^15.3.0",
-    "chalk": "^5.0.0",
-    "debug": "^4.3.1",
-    "dotenv": "^8.2.0",
+
+    "chalk": "^5.6.2",
+    "debug": "^4.4.3",
+    "dotenv": "^17.3.1",
     "jwt-simple": "^0.5.6",
-    "lit": "^2.2.1",
+    "lit": "^3.3.1",
     "router": "^2.0.0",
     "server-destroy": "^1.0.1",
-    "usb": "^2.2.0",
-    "uuid": "^8.3.2"
+    "usb": "^2.17.0",
+    "uuid": "^13.0.0"
   },
   "scripts": {
     "prepare": "rollup --config"
   },
   "devDependencies": {
-    "rollup": "^4.22.4"
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "playwright": "1.56.0",
+    "rollup": "^4.53.0"
+
   }
 }
